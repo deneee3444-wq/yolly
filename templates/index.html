@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yolly AI - Video Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg-deep: #050a0c;
+            --bg-workspace: #0a0e14;
+            --panel-bg: rgba(14, 20, 28, 0.7);
+            --panel-border: rgba(255, 255, 255, 0.05);
+            --panel-border-glow: rgba(20, 184, 166, 0.2);
+
+            --primary: #14b8a6;
+            --primary-light: #2dd4bf;
+            --primary-glow: rgba(20, 184, 166, 0.35);
+
+            --secondary: #6366f1;
+            --secondary-light: #818cf8;
+            --secondary-glow: rgba(99, 102, 241, 0.35);
+
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --text-dark: #4b5563;
+
+            --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            --glow-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image:
+                radial-gradient(circle at 10% 20%, rgba(20, 184, 166, 0.07) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(99, 102, 241, 0.05) 0%, transparent 40%);
+            background-attachment: fixed;
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 15px rgba(20, 184, 166, 0.2); }
+            50% { box-shadow: 0 0 25px rgba(20, 184, 166, 0.45); }
+        }
+        @keyframes rotate-spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes scale-up { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        @keyframes pulse-scale {
+            0%, 100% { transform: scale(1); opacity: 0.65; }
+            50% { transform: scale(1.15); opacity: 1; }
+        }
+
+        /* ── LOGIN ── */
+        .login-wrapper { display: flex; align-items: center; justify-content: center; flex-grow: 1; padding: 20px; }
+        .login-card {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px; padding: 40px 30px; width: 100%; max-width: 420px;
+            text-align: center; backdrop-filter: blur(16px);
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            animation: scale-up 0.5s ease-out;
+        }
+        .login-logo {
+            font-size: 2.2rem; font-weight: 800;
+            background: linear-gradient(135deg, var(--text-main) 30%, var(--primary-light) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            letter-spacing: 2px; margin-bottom: 6px; text-transform: uppercase;
+        }
+        .login-sub { color: var(--primary-light); font-size: 0.85rem; font-weight: 600; letter-spacing: 4px; text-transform: uppercase; margin-bottom: 35px; }
+        .login-form { display: flex; flex-direction: column; gap: 20px; }
+        .input-group { display: flex; flex-direction: column; text-align: left; gap: 8px; }
+        .input-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 600; }
+        .form-input {
+            background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border); border-radius: 8px;
+            padding: 14px; color: var(--text-main); font-family: inherit; font-size: 1rem;
+            transition: var(--transition-smooth);
+        }
+        .form-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(20, 184, 166, 0.2); }
+        .btn-submit {
+            background: linear-gradient(135deg, var(--primary) 0%, #0d9488 100%);
+            border: none; border-radius: 8px; padding: 14px; color: white;
+            font-size: 1rem; font-weight: 700; cursor: pointer; transition: var(--transition-smooth);
+            text-transform: uppercase; letter-spacing: 1px; margin-top: 10px;
+            box-shadow: 0 4px 15px rgba(20, 184, 166, 0.3);
+        }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(20, 184, 166, 0.5); }
+        .shake { animation: shake 0.4s ease-in-out; }
+        .login-error { color: var(--danger); font-size: 0.85rem; margin-top: 10px; display: none; }
+
+        /* ── APP SHELL ── */
+        .app-container { display: flex; flex-direction: column; height: 100vh; max-height: 100vh; }
+
+        .app-header {
+            background: rgba(5, 10, 12, 0.85); backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--panel-border);
+            padding: 14px 28px; display: flex; justify-content: space-between; align-items: center; z-index: 10;
+        }
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .brand-logo {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            font-size: 16px; box-shadow: 0 0 12px var(--primary-glow);
+        }
+        .brand-text h1 { font-size: 1.2rem; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+        .brand-text p { font-size: 0.65rem; color: var(--primary-light); letter-spacing: 2px; font-weight: 700; text-transform: uppercase; }
+        .btn-logout {
+            background: transparent; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px;
+            color: var(--danger); padding: 8px 16px; font-size: 0.85rem; font-weight: 600;
+            cursor: pointer; transition: var(--transition-smooth); text-decoration: none;
+        }
+        .btn-logout:hover { background: rgba(239, 68, 68, 0.1); border-color: var(--danger); }
+
+        /* ── WORKSPACE ── */
+        .workspace { display: flex; flex-grow: 1; overflow: hidden; position: relative; }
+
+        .sidebar {
+            width: 400px; min-width: 400px;
+            background: var(--bg-workspace); border-right: 1px solid var(--panel-border);
+            display: flex; flex-direction: column; overflow-y: auto; padding: 22px; gap: 22px;
+        }
+
+        .main-stage { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; background: rgba(10, 14, 20, 0.4); }
+
+        /* ── TABS ── */
+        .tabs-header {
+            display: flex; background: rgba(6, 9, 14, 0.6); border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 10px; padding: 4px; gap: 4px;
+            margin: 12px 12px 4px 12px; width: fit-content; max-width: calc(100% - 24px);
+            overflow-x: auto; backdrop-filter: blur(8px); scrollbar-width: none;
+        }
+        .tabs-header::-webkit-scrollbar { display: none; }
+        .tab-btn {
+            background: transparent; border: none; color: var(--text-muted);
+            padding: 8px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+            border-radius: 8px; transition: var(--transition-smooth);
+            display: flex; align-items: center; gap: 8px; white-space: nowrap;
+        }
+        .tab-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.02); }
+        .tab-btn.active {
+            color: white;
+            background: linear-gradient(135deg, rgba(20, 184, 166, 0.2) 0%, rgba(99, 102, 241, 0.12) 100%);
+            border: 1px solid rgba(20, 184, 166, 0.35);
+            box-shadow: 0 4px 14px rgba(20, 184, 166, 0.15), inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .tab-count {
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 20px; padding: 1px 6px; font-size: 0.7rem; font-weight: 700;
+            color: var(--text-muted); transition: var(--transition-smooth);
+        }
+        .tab-btn.active .tab-count { background: rgba(20, 184, 166, 0.2); border-color: rgba(20, 184, 166, 0.4); color: var(--primary-light); }
+
+        .tab-actions-row { display: flex; justify-content: flex-end; margin-bottom: 6px; height: 28px; align-items: center; }
+        .tab-actions-row .btn-logout { font-size: 0.75rem; padding: 5px 10px; margin: 0; border-radius: 6px; display: flex; align-items: center; gap: 4px; }
+
+        .tab-content { flex-grow: 1; overflow-y: auto; padding: 6px 10px 15px 10px; display: none; animation: fade-in 0.4s ease-out; }
+        .tab-content.active { display: block; }
+
+        /* ── SIDEBAR ELEMENTS ── */
+        .section-title {
+            font-size: 0.8rem; font-weight: 700; color: var(--text-main);
+            letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .chips-container { display: flex; flex-wrap: wrap; gap: 7px; }
+        .chip {
+            background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border);
+            padding: 7px 13px; border-radius: 8px; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; transition: var(--transition-smooth); display: flex; align-items: center; gap: 6px;
+        }
+        .chip:hover { border-color: rgba(20, 184, 166, 0.35); background: rgba(255,255,255,0.03); }
+        .chip.active {
+            background: rgba(20, 184, 166, 0.12); border-color: var(--primary);
+            color: var(--primary-light); box-shadow: 0 0 10px rgba(20, 184, 166, 0.12);
+        }
+        .chip.disabled { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+        .ratio-visual { border: 1px solid currentColor; opacity: 0.7; border-radius: 1px; }
+
+        .select-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .select-card {
+            background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border);
+            border-radius: 10px; padding: 11px 12px; cursor: pointer; transition: var(--transition-smooth); position: relative; overflow: hidden;
+        }
+        .select-card:hover { border-color: rgba(20, 184, 166, 0.35); background: rgba(255,255,255,0.03); }
+        .select-card.active { background: rgba(20, 184, 166, 0.08); border-color: var(--primary); box-shadow: 0 0 10px rgba(20, 184, 166, 0.15); }
+        .select-card-name { font-size: 0.82rem; font-weight: 700; color: var(--text-main); margin-bottom: 3px; }
+        .select-card-detail { font-size: 0.68rem; color: var(--text-muted); }
+        .card-badge {
+            position: absolute; top: 5px; right: 5px;
+            font-size: 0.55rem; font-weight: 800; text-transform: uppercase;
+            padding: 2px 5px; border-radius: 3px; letter-spacing: 0.5px;
+        }
+        .badge-i2v { background: rgba(99, 102, 241, 0.2); color: var(--secondary-light); border: 1px solid rgba(99, 102, 241, 0.3); }
+        .badge-t2v { background: rgba(20, 184, 166, 0.15); color: var(--primary-light); border: 1px solid rgba(20, 184, 166, 0.25); }
+
+        /* ── DROPZONE ── */
+        .dropzone {
+            border: 2px dashed rgba(255,255,255,0.08); border-radius: 10px; padding: 18px;
+            text-align: center; cursor: pointer; transition: var(--transition-smooth); background: rgba(0,0,0,0.2);
+        }
+        .dropzone:hover, .dropzone.dragover { border-color: var(--primary); background: rgba(20, 184, 166, 0.04); }
+        .dropzone-icon { font-size: 22px; color: var(--primary-light); margin-bottom: 6px; }
+        .dropzone-text { font-size: 0.78rem; color: var(--text-muted); }
+        .dropzone-sub { font-size: 0.68rem; color: var(--text-dark); margin-top: 3px; }
+
+        .preview-box {
+            position: relative; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden;
+            border: 1px solid var(--panel-border); background: rgba(0,0,0,0.3);
+            margin-top: 10px;
+        }
+        .preview-box img { width: 100%; height: 100%; object-fit: cover; }
+        .preview-remove {
+            position: absolute; top: 5px; right: 5px; background: rgba(239, 68, 68, 0.9);
+            border: none; color: white; border-radius: 50%; width: 22px; height: 22px;
+            display: flex; align-items: center; justify-content: center; font-size: 10px;
+            cursor: pointer; transition: var(--transition-smooth); z-index: 2;
+        }
+        .preview-remove:hover { transform: scale(1.1); background: var(--danger); }
+
+        /* ── PROMPT ── */
+        .prompt-textarea {
+            width: 100%; min-height: 90px;
+            background: rgba(0,0,0,0.4); border: 1px solid var(--panel-border); border-radius: 10px;
+            padding: 12px; color: var(--text-main); font-family: inherit; font-size: 0.9rem;
+            resize: vertical; transition: var(--transition-smooth);
+        }
+        .prompt-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 10px rgba(20, 184, 166, 0.18); }
+
+        /* ── GENERATE BUTTON ── */
+        .btn-generate {
+            width: 100%; background: linear-gradient(135deg, var(--primary) 0%, #0d9488 100%);
+            border: none; border-radius: 12px; padding: 17px; color: white;
+            font-size: 1.05rem; font-weight: 800; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            transition: var(--transition-smooth); text-transform: uppercase; letter-spacing: 1.5px;
+            box-shadow: 0 6px 20px rgba(20, 184, 166, 0.3); margin-top: 8px;
+        }
+        .btn-generate:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(20, 184, 166, 0.5); }
+
+        /* ── EMPTY STATES ── */
+        .empty-state {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            text-align: center; padding: 70px 20px; color: var(--text-muted); gap: 16px;
+            border: 1px dashed var(--panel-border); border-radius: 16px;
+            background: rgba(255,255,255,0.005); max-width: 580px; margin: 35px auto;
+        }
+        .empty-icon { font-size: 44px; color: var(--text-dark); }
+        .empty-title { font-size: 1.05rem; font-weight: 700; color: var(--text-main); }
+
+        /* ── JOB CARD ── */
+        .job-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-width: 100%; }
+        .job-card {
+            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px;
+            overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            display: flex; flex-direction: column; transition: var(--transition-smooth);
+            animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); height: fit-content; position: relative;
+        }
+        .job-card:hover { border-color: var(--panel-border-glow); }
+
+        .job-banner-area {
+            position: relative; width: 100%; aspect-ratio: 16/9;
+            background: #0c1016; overflow: hidden; display: flex; align-items: center; justify-content: center;
+        }
+        .job-banner-area video, .job-banner-area img { width: 100%; height: 100%; object-fit: cover; }
+        .job-placeholder-banner {
+            width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #070a10 0%, #0e1520 100%); user-select: none;
+        }
+        .placeholder-pulse-icon { color: var(--primary-light); filter: drop-shadow(0 0 8px var(--primary-glow)); animation: pulse-scale 2s infinite ease-in-out; }
+
+        .job-separator { height: 1px; width: 100%; background: var(--primary); box-shadow: 0 0 4px var(--primary-glow); transition: var(--transition-smooth); }
+        .job-separator.completed { background: var(--success); box-shadow: 0 0 4px rgba(16,185,129,0.4); }
+        .job-separator.failed { background: var(--danger); box-shadow: 0 0 4px rgba(239,68,68,0.4); }
+
+        .job-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+        .job-title-prompt-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; width: 100%; }
+        .job-title-prompt { font-size: 0.83rem; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-grow: 1; line-height: 1.3; }
+        .job-sub-specs { display: flex; flex-wrap: wrap; gap: 3px; }
+        .spec-chip {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--panel-border);
+            color: var(--text-muted); font-family: 'JetBrains Mono', monospace;
+            font-size: 0.66rem; font-weight: 700; padding: 2px 5px; border-radius: 3px; text-transform: uppercase;
+        }
+
+        .job-status-badge { position: absolute; top: 6px; left: 6px; padding: 3px 6px; border-radius: 3px; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; z-index: 5; }
+        .badge-running { background: #5eead4; color: #042f2e; }
+        .badge-completed { background: var(--success); color: #042f2e; }
+        .badge-failed { background: var(--danger); color: #450a0a; }
+
+        .progress-container { display: flex; flex-direction: column; gap: 2px; }
+        .progress-header-info { display: flex; justify-content: space-between; font-size: 0.67rem; font-weight: 500; }
+        .progress-pct { font-weight: 700; color: var(--primary-light); }
+        .progress-bar-bg { height: 3px; background: rgba(255,255,255,0.05); border-radius: 2px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%); border-radius: 2px; transition: width 0.4s ease; box-shadow: 0 0 4px var(--primary-glow); }
+
+        .console-log {
+            background: #050810; border: 1px solid rgba(255,255,255,0.03); border-radius: 4px;
+            padding: 6px 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.67rem;
+            line-height: 1.4; color: #5eead4; height: 58px; max-height: 58px;
+            overflow-y: auto; display: flex; flex-direction: column; gap: 2px;
+        }
+        .console-line { display: flex; gap: 3px; }
+        .console-time { color: #374151; user-select: none; display: none; }
+        .console-msg { word-break: break-all; }
+        .console-msg.success { color: var(--success); }
+        .console-msg.warning { color: var(--warning); }
+        .console-msg.error { color: var(--danger); }
+        .console-msg.info { color: #38bdf8; }
+        .console-msg.completed { color: var(--success); font-weight: 700; }
+
+        .banner-overlay-actions {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            opacity: 0; transition: var(--transition-smooth); z-index: 3;
+        }
+        .job-banner-area:hover .banner-overlay-actions { opacity: 1; }
+
+        .btn-icon-action {
+            background: var(--panel-bg); border: 1px solid var(--panel-border); color: white;
+            width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; cursor: pointer; transition: var(--transition-smooth);
+            text-decoration: none; font-size: 13px;
+        }
+        .btn-icon-action:hover { background: var(--primary); border-color: var(--primary); transform: scale(1.1); }
+
+        .job-close-btn {
+            position: absolute; top: 6px; right: 6px;
+            background: rgba(12, 16, 22, 0.8); border: 1px solid var(--panel-border); color: var(--text-muted);
+            font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            width: 20px; height: 20px; border-radius: 4px; transition: var(--transition-smooth); z-index: 5;
+        }
+        .job-close-btn:hover { background: rgba(239, 68, 68, 0.2); border-color: var(--danger); color: var(--danger); }
+
+        .btn-copy-inline {
+            background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+            font-size: 0.75rem; display: flex; align-items: center; justify-content: center;
+            padding: 2px; border-radius: 3px; transition: var(--transition-smooth); flex-shrink: 0;
+        }
+        .btn-copy-inline:hover { color: var(--primary-light); background: rgba(255,255,255,0.05); }
+
+        /* ── GALLERY ── */
+        .gallery-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+        .gallery-card {
+            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 6px;
+            overflow: hidden; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            transition: var(--transition-smooth); display: flex; flex-direction: column;
+        }
+        .gallery-card:hover { border-color: var(--panel-border-glow); }
+        .gallery-banner { position: relative; width: 100%; aspect-ratio: 16/9; background: #0c1016; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .gallery-banner video, .gallery-banner img { width: 100%; height: 100%; object-fit: cover; }
+        .gallery-banner-actions {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.55);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            opacity: 0; transition: var(--transition-smooth); z-index: 3;
+        }
+        .gallery-banner:hover .gallery-banner-actions { opacity: 1; }
+        .gallery-card-sep { height: 1px; width: 100%; background: var(--success); box-shadow: 0 0 4px rgba(16,185,129,0.35); }
+        .gallery-card-body { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+        .gallery-card-prompt-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+        .gallery-card-prompt { font-size: 0.83rem; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-grow: 1; line-height: 1.3; }
+        .gallery-card-specs { display: flex; flex-wrap: wrap; gap: 3px; }
+        .gallery-close-btn {
+            position: absolute; top: 6px; right: 6px; background: rgba(12, 16, 22, 0.8);
+            border: 1px solid var(--panel-border); color: var(--text-muted); font-size: 0.7rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            width: 20px; height: 20px; border-radius: 4px; transition: var(--transition-smooth); z-index: 5;
+        }
+        .gallery-close-btn:hover { background: rgba(239, 68, 68, 0.2); border-color: var(--danger); color: var(--danger); }
+
+        /* ── LIGHTBOX ── */
+        .lightbox {
+            position: fixed; inset: 0; background: rgba(3, 5, 8, 0.95); z-index: 100;
+            display: none; align-items: center; justify-content: center; padding: 35px; backdrop-filter: blur(12px);
+        }
+        .lightbox-close {
+            position: absolute; top: 22px; right: 22px;
+            background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border);
+            color: white; width: 42px; height: 42px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px;
+            transition: var(--transition-smooth);
+        }
+        .lightbox-close:hover { background: var(--danger); border-color: var(--danger); }
+        .lightbox-content {
+            display: flex; max-width: 1200px; width: 100%; height: auto; max-height: 90vh;
+            background: var(--bg-workspace); border: 1px solid var(--panel-border); border-radius: 16px;
+            overflow: hidden; box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+            animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .lightbox-video-pane {
+            flex-grow: 1; background: black; display: flex; align-items: center; justify-content: center;
+            overflow: hidden; position: relative; aspect-ratio: 16/9;
+        }
+        .lightbox-video-pane video { width: 100%; height: 100%; object-fit: contain; }
+        .lightbox-info-pane { width: 360px; min-width: 360px; border-left: 1px solid var(--panel-border); padding: 28px; display: flex; flex-direction: column; gap: 18px; overflow-y: auto; }
+        .lightbox-title {
+            font-size: 1.05rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            background: linear-gradient(135deg, var(--text-main) 0%, var(--primary-light) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .lightbox-detail-grid { display: flex; flex-direction: column; gap: 11px; }
+        .lightbox-detail-item { display: flex; flex-direction: column; gap: 4px; }
+        .lightbox-detail-label { font-size: 0.62rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; font-weight: 600; }
+        .lightbox-detail-value { font-size: 0.82rem; color: var(--text-main); background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border); padding: 7px 10px; border-radius: 6px; word-break: break-word; }
+        .lightbox-actions { margin-top: auto; display: flex; flex-direction: column; gap: 9px; }
+        .btn-lightbox-action { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; border-radius: 8px; font-weight: 700; text-decoration: none; cursor: pointer; transition: var(--transition-smooth); font-size: 0.88rem; border: none; }
+        .btn-lightbox-download { background: var(--primary); color: white; }
+        .btn-lightbox-download:hover { background: var(--primary-light); box-shadow: 0 0 15px var(--primary-glow); }
+        .btn-lightbox-delete { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.3); }
+        .btn-lightbox-delete:hover { background: var(--danger); color: white; border-color: var(--danger); }
+
+        /* ── PROMPTS ── */
+        .prompt-manager-container { display: grid; grid-template-columns: 300px 1fr; gap: 22px; max-width: 100%; }
+        .prompt-editor-sidebar { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 14px; height: fit-content; }
+        .prompts-list-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+        .prompt-user-card { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 9px; transition: var(--transition-smooth); }
+        .prompt-user-card:hover { border-color: var(--panel-border-glow); transform: translateY(-2px); }
+        .prompt-user-card-header { display: flex; justify-content: space-between; align-items: center; }
+        .prompt-tag { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; background: rgba(20, 184, 166, 0.08); color: var(--primary-light); border: 1px solid rgba(20, 184, 166, 0.2); text-transform: uppercase; }
+        .prompt-user-body { font-size: 0.8rem; color: var(--text-main); line-height: 1.4; flex-grow: 1; word-break: break-word; }
+        .prompt-user-actions { display: flex; gap: 6px; border-top: 1px solid var(--panel-border); padding-top: 9px; margin-top: auto; }
+        .prompt-action-btn { flex-grow: 1; background: rgba(255,255,255,0.02); border: 1px solid var(--panel-border); border-radius: 4px; color: var(--text-main); padding: 6px; font-size: 0.7rem; font-weight: 700; cursor: pointer; transition: var(--transition-smooth); text-align: center; text-transform: uppercase; }
+        .prompt-action-btn:hover { background: var(--primary); border-color: var(--primary); color: white; }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 1024px) {
+            .app-container { height: auto; max-height: none; }
+            .workspace { flex-direction: column; height: auto; overflow: visible; }
+            .sidebar { width: 100%; min-width: 100%; border-right: none; border-bottom: 1px solid var(--panel-border); overflow-y: visible; }
+            .main-stage { height: auto; overflow: visible; }
+            .tab-content { overflow-y: visible; }
+            .tabs-header { position: sticky; top: 0; z-index: 5; background: rgba(5, 10, 12, 0.95); backdrop-filter: blur(10px); margin: 10px 10px 4px 10px; border-radius: 8px; width: auto; max-width: calc(100% - 20px); overflow-x: auto; display: flex; flex-wrap: nowrap; scrollbar-width: none; }
+            .tabs-header::-webkit-scrollbar { display: none; }
+            .prompt-manager-container { grid-template-columns: 1fr; }
+            .lightbox-content { flex-direction: column; height: auto; max-height: 95vh; }
+            .lightbox-info-pane { width: 100%; min-width: 100%; border-left: none; border-top: 1px solid var(--panel-border); }
+        }
+        @media (max-width: 580px) {
+            .app-header { padding: 10px 15px; }
+            .tab-btn { padding: 10px 12px; font-size: 0.78rem; }
+            .job-grid, .gallery-grid { grid-template-columns: repeat(2, 1fr); }
+            .lightbox { padding: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+    {% if not logged_in %}
+    <!-- ── LOGIN PAGE ─────────────────────────────────────────────────────── -->
+    <div class="login-wrapper">
+        <div class="login-card" id="loginCard">
+            <div class="login-logo">Yolly AI</div>
+            <div class="login-sub">Video Studio</div>
+            <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+                <div class="input-group">
+                    <label class="input-label" for="passwordInput">Giriş Şifresi</label>
+                    <input class="form-input" type="password" id="passwordInput" placeholder="••••••••" required autofocus autocomplete="current-password">
+                </div>
+                <button class="btn-submit" type="submit">Giriş Yap</button>
+            </form>
+            <div class="login-error" id="loginError">Hatalı şifre! Lütfen tekrar deneyin.</div>
+        </div>
+    </div>
+
+    <script>
+        function handleLogin(e) {
+            e.preventDefault();
+            const password = document.getElementById('passwordInput').value;
+            const errorDiv = document.getElementById('loginError');
+            const card = document.getElementById('loginCard');
+            errorDiv.style.display = 'none';
+            card.classList.remove('shake');
+            const formData = new FormData();
+            formData.append('password', password);
+            fetch('/login', { method: 'POST', body: formData })
+            .then(res => {
+                if (res.ok) { window.location.reload(); }
+                else { card.classList.add('shake'); errorDiv.style.display = 'block'; }
+            })
+            .catch(() => { card.classList.add('shake'); errorDiv.textContent = 'Bağlantı hatası!'; errorDiv.style.display = 'block'; });
+        }
+    </script>
+
+    {% else %}
+    <!-- ── WORKSPACE ──────────────────────────────────────────────────────── -->
+    <div class="app-container">
+
+        <header class="app-header">
+            <div class="brand">
+                <div class="brand-logo">🎬</div>
+                <div class="brand-text">
+                    <h1>Yolly AI</h1>
+                    <p>Video Studio</p>
+                </div>
+            </div>
+            <a href="/logout" class="btn-logout">Çıkış Yap</a>
+        </header>
+
+        <div class="workspace">
+
+            <!-- ── LEFT SIDEBAR ── -->
+            <aside class="sidebar">
+
+                <!-- Input Mode -->
+                <div>
+                    <div class="section-title">Giriş Modu</div>
+                    <div class="chips-container" id="inputModeContainer">
+                        <div class="chip active" onclick="selectInputMode('text')" id="chip-text">🎬 Text to Video</div>
+                        <div class="chip" onclick="selectInputMode('image')" id="chip-image">🖼️ Image to Video</div>
+                    </div>
+                </div>
+
+                <!-- Reference Image Upload (conditional) -->
+                <div id="imageUploadSection" style="display: none;">
+                    <div class="section-title">Referans Görsel</div>
+                    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+                        <div class="dropzone-icon">📤</div>
+                        <div class="dropzone-text">Görsel sürükle veya tıkla</div>
+                        <div class="dropzone-sub">JPG veya PNG (ilk kare referansı)</div>
+                    </div>
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileSelect(event)">
+                    <div id="uploadPreview" style="display: none;">
+                        <!-- preview injected here -->
+                    </div>
+                </div>
+
+                <!-- Model Selection -->
+                <div>
+                    <div class="section-title">Model Seçimi</div>
+                    <div class="select-grid" id="modelsGrid"></div>
+                </div>
+
+                <!-- Aspect Ratio -->
+                <div>
+                    <div class="section-title">En Boy Oranı</div>
+                    <div class="chips-container" id="aspectContainer"></div>
+                </div>
+
+                <!-- Resolution -->
+                <div>
+                    <div class="section-title">Çözünürlük</div>
+                    <div class="chips-container" id="resolutionContainer"></div>
+                </div>
+
+                <!-- Duration -->
+                <div>
+                    <div class="section-title">Video Süresi</div>
+                    <div class="chips-container" id="durationContainer"></div>
+                </div>
+
+                <!-- Prompt -->
+                <div>
+                    <div class="section-title">Yaratıcı Komut (Prompt)</div>
+                    <textarea class="prompt-textarea" id="promptInput" placeholder="A serene Studio Ghibli style scene, soft wind blowing through ancient trees, golden hour light, cinematic camera pan..."></textarea>
+                </div>
+
+                <!-- Generate Button -->
+                <button class="btn-generate" id="generateBtn" onclick="triggerGeneration()">
+                    <span>Video Üret</span>
+                    <span id="btnIcon">⚡</span>
+                </button>
+
+            </aside>
+
+            <!-- ── MAIN STAGE ── -->
+            <main class="main-stage">
+
+                <div class="tabs-header">
+                    <button class="tab-btn active" onclick="switchTab('generations')">
+                        <span>Aktif Üretimler</span>
+                        <span class="tab-count" id="activeJobsCount">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('gallery')">
+                        <span>Galeri</span>
+                        <span class="tab-count" id="galleryCount">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('prompts')">
+                        <span>Promptlar</span>
+                    </button>
+                </div>
+
+                <!-- TAB: GENERATIONS -->
+                <div class="tab-content active" id="tab-generations">
+                    <div class="tab-actions-row">
+                        <button class="btn-logout" id="clearGenerationsBtn" onclick="clearAllGenerations()" style="display: none;">Tümünü Sil</button>
+                    </div>
+                    <div class="empty-state" id="generationsEmpty">
+                        <div class="empty-icon">🎬</div>
+                        <div class="empty-title">Henüz aktif bir üretim yok</div>
+                        <p>Sol panelden model ve ayarları seçip prompt yazın. Birden fazla üretimi eşzamanlı başlatabilirsiniz.</p>
+                    </div>
+                    <div class="job-grid" id="jobGrid"></div>
+                </div>
+
+                <!-- TAB: GALLERY -->
+                <div class="tab-content" id="tab-gallery">
+                    <div class="tab-actions-row">
+                        <button class="btn-logout" id="clearGalleryBtn" onclick="clearAllHistory()" style="display: none;">Tümünü Temizle</button>
+                    </div>
+                    <div class="empty-state" id="galleryEmpty">
+                        <div class="empty-icon">🎥</div>
+                        <div class="empty-title">Galeri boş</div>
+                        <p>Üretilen videolar buraya kaydedilecek (RAM'de, oturum süresince).</p>
+                    </div>
+                    <div class="gallery-grid" id="galleryGrid"></div>
+                </div>
+
+                <!-- TAB: PROMPTS -->
+                <div class="tab-content" id="tab-prompts">
+                    <div class="tab-actions-row">
+                        <button class="btn-logout" id="clearPromptsBtn" onclick="clearAllPrompts()" style="display: none;">🗑️ Tümünü Sil</button>
+                    </div>
+                    <div class="prompt-manager-container">
+                        <div class="prompt-editor-sidebar">
+                            <h3 class="section-title" id="pmFormTitle">Yeni Prompt Ekle</h3>
+                            <input type="hidden" id="pmPromptId" value="">
+                            <div class="input-group">
+                                <label class="input-label">Kategori / Etiket</label>
+                                <input class="form-input" type="text" id="pmPromptTag" placeholder="Örn: Ghibli, Cyberpunk, Doğa">
+                            </div>
+                            <div class="input-group">
+                                <label class="input-label">Prompt Metni</label>
+                                <textarea class="prompt-textarea" id="pmPromptText" placeholder="A detailed cinematic description..."></textarea>
+                            </div>
+                            <button class="btn-submit" id="pmSaveBtn" onclick="savePrompt()">Kaydet</button>
+                            <button class="btn-submit" id="pmCancelBtn" onclick="resetPromptForm()" style="display: none; background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border); margin-top: 5px;">Vazgeç</button>
+                        </div>
+                        <div>
+                            <div class="empty-state" id="promptsEmpty" style="margin: 0 auto; max-width: 100%;">
+                                <div class="empty-icon">📖</div>
+                                <div class="empty-title">Prompt Kütüphanesi Boş</div>
+                                <p>Promptlarını kaydet, tek tıkla stüdyoya aktar.</p>
+                            </div>
+                            <div class="prompts-list-grid" id="promptsListGrid"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- ── LIGHTBOX ── -->
+    <div class="lightbox" id="lightbox" onclick="handleLightboxBgClick(event)">
+        <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+        <div class="lightbox-content" onclick="event.stopPropagation()">
+            <div class="lightbox-video-pane">
+                <video id="lightboxVideo" controls playsinline>
+                    <source id="lightboxVideoSrc" src="" type="video/mp4">
+                </video>
+            </div>
+            <div class="lightbox-info-pane">
+                <div class="lightbox-title">Video Ayrıntıları</div>
+                <div class="lightbox-detail-grid">
+                    <div class="lightbox-detail-item">
+                        <div class="lightbox-detail-label">Model</div>
+                        <div class="lightbox-detail-value" id="lb-model">—</div>
+                    </div>
+                    <div class="lightbox-detail-item">
+                        <div class="lightbox-detail-label">Komut (Prompt)</div>
+                        <div class="lightbox-detail-value" id="lb-prompt">—</div>
+                    </div>
+                    <div class="lightbox-detail-item">
+                        <div class="lightbox-detail-label">Çözünürlük & Süre</div>
+                        <div class="lightbox-detail-value" id="lb-meta">—</div>
+                    </div>
+                    <div class="lightbox-detail-item">
+                        <div class="lightbox-detail-label">Oluşturulma Tarihi</div>
+                        <div class="lightbox-detail-value" id="lb-date">—</div>
+                    </div>
+                </div>
+                <div class="lightbox-actions">
+                    <a href="" class="btn-lightbox-action btn-lightbox-download" id="lb-download" download>⬇ Videoyu İndir</a>
+                    <button class="btn-lightbox-action btn-lightbox-delete" id="lb-delete-btn" style="display: none;">Galeriden Sil</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── SCRIPTS ── -->
+    <script>
+        let modelsConfig = {};
+        let selectedModel = '';
+        let selectedRatio = '';
+        let selectedResolution = '';
+        let selectedDuration = '';
+        let selectedInputMode = 'text';
+        let uploadedFile = null;
+        let activeJobsCount = 0;
+        let galleryItems = [];
+        let userPrompts = [];
+        const activeStreams = {};
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchModels();
+            fetchHistory();
+            fetchPrompts();
+            fetchActiveJobs();
+
+            const dropzone = document.getElementById('dropzone');
+            ['dragenter', 'dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('dragover'); }));
+            ['dragleave', 'drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('dragover'); }));
+            dropzone.addEventListener('drop', ev => handleFiles(ev.dataTransfer.files));
+        });
+
+        // ── Tab Switcher ──────────────────────────────────────────────────────
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            const labelMap = { generations: 'aktif', gallery: 'galeri', prompts: 'prompt' };
+            const found = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.toLowerCase().includes(labelMap[tabName]));
+            if (found) found.classList.add('active');
+            const target = document.getElementById(`tab-${tabName}`);
+            if (target) target.classList.add('active');
+        }
+
+        // ── Input Mode ────────────────────────────────────────────────────────
+        function selectInputMode(mode) {
+            selectedInputMode = mode;
+            document.getElementById('chip-text').classList.toggle('active', mode === 'text');
+            document.getElementById('chip-image').classList.toggle('active', mode === 'image');
+            document.getElementById('imageUploadSection').style.display = mode === 'image' ? 'block' : 'none';
+
+            // If model doesn't support image, force text
+            if (mode === 'image' && modelsConfig[selectedModel] && !modelsConfig[selectedModel].supports_image) {
+                alert(`${selectedModel} modeli Image to Video desteklemiyor. Önce uygun bir model seçin.`);
+                selectInputMode('text');
+            }
+        }
+
+        // ── Fetch Models ──────────────────────────────────────────────────────
+        function fetchModels() {
+            fetch('/api/models')
+            .then(res => res.json())
+            .then(data => { modelsConfig = data; renderModels(); })
+            .catch(err => console.error('Model verisi yüklenemedi:', err));
+        }
+
+        function renderModels() {
+            const grid = document.getElementById('modelsGrid');
+            grid.innerHTML = '';
+            let first = true;
+            for (const [name, config] of Object.entries(modelsConfig)) {
+                const card = document.createElement('div');
+                card.className = `select-card ${first ? 'active' : ''}`;
+                card.onclick = () => selectModel(name);
+
+                const modes = config.supports_image ? 'I2V + T2V' : 'T2V';
+                const badgeClass = config.supports_image ? 'badge-i2v' : 'badge-t2v';
+                const res = config.resolutions.join('/');
+                const dur = config.durations.join('/') + 's';
+
+                card.innerHTML = `
+                    <div class="select-card-name">${name}</div>
+                    <div class="select-card-detail">${res} • ${dur}</div>
+                    <span class="card-badge ${badgeClass}">${modes}</span>
+                `;
+                grid.appendChild(card);
+
+                if (first) { selectedModel = name; updateModelOptions(name); first = false; }
+            }
+        }
+
+        function selectModel(name) {
+            document.querySelectorAll('#modelsGrid .select-card').forEach(c => {
+                c.classList.toggle('active', c.querySelector('.select-card-name').textContent === name);
+            });
+            selectedModel = name;
+            updateModelOptions(name);
+
+            // If image mode but new model doesn't support it, switch to text
+            if (selectedInputMode === 'image' && !modelsConfig[name].supports_image) {
+                selectInputMode('text');
+            }
+
+            // Disable image chip if model doesn't support it
+            const imageChip = document.getElementById('chip-image');
+            imageChip.classList.toggle('disabled', !modelsConfig[name].supports_image);
+        }
+
+        function updateModelOptions(name) {
+            const config = modelsConfig[name];
+
+            // Aspect Ratios
+            const aspectContainer = document.getElementById('aspectContainer');
+            aspectContainer.innerHTML = '';
+            config.aspect_ratios.forEach((ratio, idx) => {
+                const chip = document.createElement('div');
+                chip.className = `chip ${idx === 0 ? 'active' : ''}`;
+                if (idx === 0) selectedRatio = ratio;
+                chip.onclick = () => {
+                    document.querySelectorAll('#aspectContainer .chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active'); selectedRatio = ratio;
+                };
+                const parts = ratio.split(':').map(Number);
+                let w = 12, h = 12;
+                if (parts.length === 2) {
+                    const max = Math.max(parts[0], parts[1]);
+                    w = Math.round((parts[0] / max) * 14);
+                    h = Math.round((parts[1] / max) * 14);
+                }
+                chip.innerHTML = `<span class="ratio-visual" style="width:${w}px;height:${h}px;display:inline-block;"></span><span>${ratio}</span>`;
+                aspectContainer.appendChild(chip);
+            });
+
+            // Resolutions
+            const resolutionContainer = document.getElementById('resolutionContainer');
+            resolutionContainer.innerHTML = '';
+            config.resolutions.forEach((res, idx) => {
+                const chip = document.createElement('div');
+                chip.className = `chip ${idx === 0 ? 'active' : ''}`;
+                if (idx === 0) selectedResolution = res;
+                chip.onclick = () => {
+                    document.querySelectorAll('#resolutionContainer .chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active'); selectedResolution = res;
+                };
+                chip.textContent = res;
+                resolutionContainer.appendChild(chip);
+            });
+
+            // Durations
+            const durationContainer = document.getElementById('durationContainer');
+            durationContainer.innerHTML = '';
+            config.durations.forEach((dur, idx) => {
+                const chip = document.createElement('div');
+                chip.className = `chip ${idx === 0 ? 'active' : ''}`;
+                if (idx === 0) selectedDuration = dur;
+                chip.onclick = () => {
+                    document.querySelectorAll('#durationContainer .chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active'); selectedDuration = dur;
+                };
+                chip.textContent = `${dur}s`;
+                durationContainer.appendChild(chip);
+            });
+        }
+
+        // ── File Upload ───────────────────────────────────────────────────────
+        function handleFileSelect(e) { handleFiles(e.target.files); }
+        function handleFiles(files) {
+            if (!files || files.length === 0) return;
+            const file = files[0];
+            if (!file.type.startsWith('image/')) return;
+            uploadedFile = file;
+            renderPreview();
+        }
+
+        function renderPreview() {
+            const preview = document.getElementById('uploadPreview');
+            const dropzone = document.getElementById('dropzone');
+            if (!uploadedFile) {
+                preview.style.display = 'none'; dropzone.style.display = 'block'; return;
+            }
+            dropzone.style.display = 'none';
+            preview.style.display = 'block';
+            preview.innerHTML = '';
+            const box = document.createElement('div');
+            box.className = 'preview-box';
+            const img = document.createElement('img');
+            const reader = new FileReader();
+            reader.onload = e => { img.src = e.target.result; };
+            reader.readAsDataURL(uploadedFile);
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'preview-remove';
+            removeBtn.innerHTML = '✕';
+            removeBtn.onclick = e => { e.stopPropagation(); uploadedFile = null; renderPreview(); dropzone.style.display = 'block'; };
+            box.appendChild(img); box.appendChild(removeBtn);
+            preview.appendChild(box);
+        }
+
+        // ── Clipboard ─────────────────────────────────────────────────────────
+        function copyPromptToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => alert('Prompt panoya kopyalandı!')).catch(() => alert('Kopyalama başarısız.'));
+        }
+
+        // ── Trigger Generation ────────────────────────────────────────────────
+        function triggerGeneration() {
+            const prompt = document.getElementById('promptInput').value.trim();
+            if (!prompt) { alert('Lütfen bir prompt yazın!'); return; }
+            if (selectedInputMode === 'image' && !uploadedFile) { alert('Image to Video modu için referans görsel seçmelisiniz!'); return; }
+
+            const generateBtn = document.getElementById('generateBtn');
+            const btnIcon = document.getElementById('btnIcon');
+            generateBtn.disabled = true; generateBtn.style.opacity = '0.65';
+            btnIcon.style.animation = 'rotate-spinner 1s linear infinite';
+
+            const formData = new FormData();
+            formData.append('prompt', prompt);
+            formData.append('model', selectedModel);
+            formData.append('aspect_ratio', selectedRatio);
+            formData.append('resolution', selectedResolution);
+            formData.append('duration', selectedDuration);
+            formData.append('input_mode', selectedInputMode);
+            if (uploadedFile) formData.append('image', uploadedFile);
+
+            fetch('/api/generate/start', { method: 'POST', body: formData })
+            .then(res => res.json())
+            .then(data => {
+                generateBtn.disabled = false; generateBtn.style.opacity = '1';
+                btnIcon.style.animation = 'none';
+                if (data.error) { alert('Başlatma Hatası: ' + data.error); return; }
+
+                let refImgUrl = uploadedFile ? URL.createObjectURL(uploadedFile) : '';
+                switchTab('generations');
+                createJobCard(data.job_id, prompt, selectedModel, selectedRatio, selectedResolution, selectedDuration, selectedInputMode, refImgUrl);
+
+                activeJobsCount++;
+                document.getElementById('activeJobsCount').textContent = activeJobsCount;
+                connectToJobStream(data.job_id, prompt, selectedModel, selectedRatio, selectedResolution, selectedDuration);
+            })
+            .catch(err => {
+                console.error(err); alert('Sunucuya bağlanılamadı.');
+                generateBtn.disabled = false; generateBtn.style.opacity = '1'; btnIcon.style.animation = 'none';
+            });
+        }
+
+        // ── Create Job Card ───────────────────────────────────────────────────
+        function createJobCard(jobId, prompt, model, ratio, res, dur, mode, refImgUrl) {
+            document.getElementById('generationsEmpty').style.display = 'none';
+            document.getElementById('clearGenerationsBtn').style.display = 'block';
+            const grid = document.getElementById('jobGrid');
+            const card = document.createElement('div');
+            card.className = 'job-card'; card.id = `job-${jobId}`;
+
+            const safePrompt = prompt.replace(/'/g, "\\'");
+
+            let bannerHtml;
+            if (refImgUrl) {
+                bannerHtml = `<img id="banner-media-${jobId}" src="${refImgUrl}" alt="Ref">`;
+            } else {
+                bannerHtml = `
+                    <div id="banner-media-${jobId}" class="job-placeholder-banner">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="placeholder-pulse-icon"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                    </div>`;
+            }
+
+            card.innerHTML = `
+                <div class="job-banner-area">
+                    ${bannerHtml}
+                    <div class="banner-overlay-actions" id="banner-actions-${jobId}" style="display:none;"></div>
+                    <span class="job-status-badge badge-running" id="badge-${jobId}">PROCESSING</span>
+                    <button class="job-close-btn" onclick="cancelAndRemoveJob('${jobId}')" title="İptal / Kapat">✕</button>
+                </div>
+                <div class="job-separator" id="sep-${jobId}"></div>
+                <div class="job-body">
+                    <div class="job-title-prompt-row">
+                        <div class="job-title-prompt" title="${prompt}">${prompt}</div>
+                        <button class="btn-copy-inline" onclick="copyPromptToClipboard('${safePrompt}')" title="Kopyala">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        </button>
+                    </div>
+                    <div class="job-sub-specs">
+                        <span class="spec-chip">VIDEO</span>
+                        <span class="spec-chip">${model}</span>
+                        <span class="spec-chip">${ratio}</span>
+                        <span class="spec-chip">${res}</span>
+                        <span class="spec-chip">${dur}s</span>
+                        <span class="spec-chip">${mode.toUpperCase()}</span>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-header-info">
+                            <span id="progress-status-text-${jobId}">Proxy Aranıyor</span>
+                            <span class="progress-pct" id="pct-${jobId}">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill" id="fill-${jobId}" style="width:0%;"></div>
+                        </div>
+                    </div>
+                    <div class="console-log" id="console-${jobId}"></div>
+                </div>
+            `;
+            grid.insertBefore(card, grid.firstChild);
+        }
+
+        // ── SSE Stream Connection ─────────────────────────────────────────────
+        function connectToJobStream(jobId, prompt, model, ratio, res, dur) {
+            const source = new EventSource(`/api/generate/stream/${jobId}`);
+            activeStreams[jobId] = source;
+            const consoleBox = document.getElementById(`console-${jobId}`);
+            const safePrompt = prompt.replace(/'/g, "\\'");
+
+            function addLogLine(msg, status = 'info') {
+                if (!consoleBox) return;
+                const line = document.createElement('div');
+                line.className = 'console-line';
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                const t = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+                line.innerHTML = `<span class="console-time">[${t}]</span><span class="console-msg ${status}">${msg}</span>`;
+                consoleBox.appendChild(line);
+                consoleBox.scrollTop = consoleBox.scrollHeight;
+            }
+
+            const statusLabelMap = {
+                finding_proxy: 'Proxy Aranıyor',
+                registering: 'Hesap Oluşturuluyor',
+                checking_credits: 'Kredi Kontrol Ediliyor',
+                uploading: 'Görsel Yükleniyor',
+                generating: 'Video Üretiliyor'
+            };
+
+            source.onmessage = e => {
+                const data = JSON.parse(e.data);
+
+                if (data.type === 'log') {
+                    addLogLine(data.message, data.status);
+                    const pctEl = document.getElementById(`pct-${jobId}`);
+                    const fillEl = document.getElementById(`fill-${jobId}`);
+                    const statusEl = document.getElementById(`progress-status-text-${jobId}`);
+                    if (pctEl) pctEl.textContent = `${data.pct}%`;
+                    if (fillEl) fillEl.style.width = `${data.pct}%`;
+                    if (statusEl && statusLabelMap[data.status]) statusEl.textContent = statusLabelMap[data.status];
+                }
+                else if (data.type === 'completed') {
+                    source.close(); delete activeStreams[jobId];
+                    activeJobsCount = Math.max(0, activeJobsCount - 1);
+                    document.getElementById('activeJobsCount').textContent = activeJobsCount;
+
+                    const badge = document.getElementById(`badge-${jobId}`);
+                    if (badge) { badge.className = 'job-status-badge badge-completed'; badge.textContent = 'COMPLETED'; }
+                    const sep = document.getElementById(`sep-${jobId}`);
+                    if (sep) sep.className = 'job-separator completed';
+                    const statusEl = document.getElementById(`progress-status-text-${jobId}`);
+                    const pctEl = document.getElementById(`pct-${jobId}`);
+                    const fillEl = document.getElementById(`fill-${jobId}`);
+                    if (statusEl) statusEl.textContent = 'Video Hazır!';
+                    if (pctEl) pctEl.textContent = '100%';
+                    if (fillEl) fillEl.style.width = '100%';
+
+                    const videoUrl = data.outputs[0];
+                    const thumbUrl = data.thumbnail || '';
+
+                    if (videoUrl) {
+                        const bannerMedia = document.getElementById(`banner-media-${jobId}`);
+                        const videoEl = document.createElement('video');
+                        videoEl.id = `banner-media-${jobId}`;
+                        videoEl.autoplay = true; videoEl.loop = true; videoEl.muted = true; videoEl.playsInline = true;
+                        if (thumbUrl) videoEl.poster = thumbUrl;
+                        videoEl.src = videoUrl;
+                        if (bannerMedia) bannerMedia.replaceWith(videoEl);
+
+                        const bannerActions = document.getElementById(`banner-actions-${jobId}`);
+                        if (bannerActions) {
+                            bannerActions.innerHTML = `
+                                <button class="btn-icon-action" onclick="openLightbox('${videoUrl}','${safePrompt}','${model}','${ratio}','${res}','${dur}','')" title="Büyüt">👁️</button>
+                                <a href="${videoUrl}" class="btn-icon-action" download title="İndir">💾</a>
+                            `;
+                            bannerActions.style.display = 'flex';
+                        }
+                    }
+                    fetchHistory();
+                }
+                else if (data.type === 'failed') {
+                    source.close(); delete activeStreams[jobId];
+                    activeJobsCount = Math.max(0, activeJobsCount - 1);
+                    document.getElementById('activeJobsCount').textContent = activeJobsCount;
+                    const badge = document.getElementById(`badge-${jobId}`);
+                    if (badge) { badge.className = 'job-status-badge badge-failed'; badge.textContent = 'FAILED'; }
+                    const sep = document.getElementById(`sep-${jobId}`);
+                    if (sep) sep.className = 'job-separator failed';
+                    const statusEl = document.getElementById(`progress-status-text-${jobId}`);
+                    const fillEl = document.getElementById(`fill-${jobId}`);
+                    if (statusEl) statusEl.textContent = 'Başarısız: ' + data.error;
+                    if (fillEl) { fillEl.style.backgroundImage = 'none'; fillEl.style.backgroundColor = 'var(--danger)'; }
+                    addLogLine('Hata: ' + data.error, 'error');
+                }
+            };
+
+            source.onerror = () => {
+                source.close(); delete activeStreams[jobId];
+                activeJobsCount = Math.max(0, activeJobsCount - 1);
+                document.getElementById('activeJobsCount').textContent = activeJobsCount;
+                const badge = document.getElementById(`badge-${jobId}`);
+                if (badge) { badge.className = 'job-status-badge badge-failed'; badge.textContent = 'KOPTU'; }
+                addLogLine('SSE bağlantısı koptu.', 'error');
+            };
+        }
+
+        // ── Fetch Active Jobs (page reload recovery) ──────────────────────────
+        function fetchActiveJobs() {
+            fetch('/api/generate/active')
+            .then(res => res.json())
+            .then(jobs => {
+                const jobIds = Object.keys(jobs);
+                if (jobIds.length > 0) {
+                    document.getElementById('clearGenerationsBtn').style.display = 'block';
+                    document.getElementById('generationsEmpty').style.display = 'none';
+                }
+                let running = 0;
+                for (const [jobId, job] of Object.entries(jobs)) {
+                    createJobCard(jobId, job.prompt, job.model, job.aspect_ratio, job.resolution, job.duration, job.input_mode, job.outputs.length > 0 ? job.thumbnail : null);
+
+                    const consoleBox = document.getElementById(`console-${jobId}`);
+                    const badge = document.getElementById(`badge-${jobId}`);
+                    const statusEl = document.getElementById(`progress-status-text-${jobId}`);
+                    const pctEl = document.getElementById(`pct-${jobId}`);
+                    const fillEl = document.getElementById(`fill-${jobId}`);
+                    const sep = document.getElementById(`sep-${jobId}`);
+
+                    if (consoleBox) {
+                        job.logs.forEach(log => {
+                            const line = document.createElement('div');
+                            line.className = 'console-line';
+                            line.innerHTML = `<span class="console-time">[${log.time}]</span><span class="console-msg ${log.status}">${log.message}</span>`;
+                            consoleBox.appendChild(line);
+                        });
+                        consoleBox.scrollTop = consoleBox.scrollHeight;
+                    }
+                    if (pctEl) pctEl.textContent = `${job.pct}%`;
+                    if (fillEl) fillEl.style.width = `${job.pct}%`;
+
+                    if (job.status === 'completed') {
+                        if (badge) { badge.className = 'job-status-badge badge-completed'; badge.textContent = 'COMPLETED'; }
+                        if (sep) sep.className = 'job-separator completed';
+                        if (statusEl) statusEl.textContent = 'Video Hazır!';
+
+                        if (job.outputs.length > 0) {
+                            const videoUrl = job.outputs[0];
+                            const thumbUrl = job.thumbnail || '';
+                            const bannerMedia = document.getElementById(`banner-media-${jobId}`);
+                            const videoEl = document.createElement('video');
+                            videoEl.id = `banner-media-${jobId}`;
+                            videoEl.autoplay = true; videoEl.loop = true; videoEl.muted = true; videoEl.playsInline = true;
+                            if (thumbUrl) videoEl.poster = thumbUrl;
+                            videoEl.src = videoUrl;
+                            if (bannerMedia) bannerMedia.replaceWith(videoEl);
+
+                            const safePrompt = job.prompt.replace(/'/g, "\\'");
+                            const bannerActions = document.getElementById(`banner-actions-${jobId}`);
+                            if (bannerActions) {
+                                bannerActions.innerHTML = `
+                                    <button class="btn-icon-action" onclick="openLightbox('${videoUrl}','${safePrompt}','${job.model}','${job.aspect_ratio}','${job.resolution}','${job.duration}','')" title="Büyüt">👁️</button>
+                                    <a href="${videoUrl}" class="btn-icon-action" download title="İndir">💾</a>
+                                `;
+                                bannerActions.style.display = 'flex';
+                            }
+                        }
+                    } else if (job.status === 'failed') {
+                        if (badge) { badge.className = 'job-status-badge badge-failed'; badge.textContent = 'FAILED'; }
+                        if (sep) sep.className = 'job-separator failed';
+                        if (statusEl) statusEl.textContent = 'Başarısız: ' + (job.error || '');
+                        if (fillEl) { fillEl.style.backgroundImage = 'none'; fillEl.style.backgroundColor = 'var(--danger)'; }
+                    } else {
+                        running++;
+                        connectToJobStream(jobId, job.prompt, job.model, job.aspect_ratio, job.resolution, job.duration);
+                    }
+                }
+                activeJobsCount = running;
+                document.getElementById('activeJobsCount').textContent = activeJobsCount;
+            })
+            .catch(err => console.error('Aktif işler yüklenemedi:', err));
+        }
+
+        // ── Cancel & Remove Job ───────────────────────────────────────────────
+        function cancelAndRemoveJob(jobId) {
+            if (activeStreams[jobId]) { activeStreams[jobId].close(); delete activeStreams[jobId]; }
+            fetch(`/api/generate/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+            const card = document.getElementById(`job-${jobId}`);
+            if (card) {
+                const badge = card.querySelector(`#badge-${jobId}`);
+                if (badge && badge.classList.contains('badge-running')) {
+                    activeJobsCount = Math.max(0, activeJobsCount - 1);
+                    document.getElementById('activeJobsCount').textContent = activeJobsCount;
+                }
+                card.style.opacity = '0'; card.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    card.remove();
+                    if (!document.getElementById('jobGrid').children.length) {
+                        document.getElementById('generationsEmpty').style.display = 'flex';
+                        document.getElementById('clearGenerationsBtn').style.display = 'none';
+                    }
+                }, 280);
+            }
+        }
+
+        // ── Gallery ───────────────────────────────────────────────────────────
+        function fetchHistory() {
+            fetch('/api/history').then(res => res.json()).then(data => { galleryItems = data; renderGallery(); }).catch(console.error);
+        }
+
+        function renderGallery() {
+            const grid = document.getElementById('galleryGrid');
+            const empty = document.getElementById('galleryEmpty');
+            const clearBtn = document.getElementById('clearGalleryBtn');
+            grid.innerHTML = '';
+            document.getElementById('galleryCount').textContent = galleryItems.length;
+
+            if (!galleryItems.length) { empty.style.display = 'flex'; clearBtn.style.display = 'none'; return; }
+            empty.style.display = 'none'; clearBtn.style.display = 'block';
+
+            galleryItems.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'gallery-card'; card.id = `gallery-${item.id}`;
+                const safePrompt = item.prompt.replace(/'/g, "\\'");
+
+                card.innerHTML = `
+                    <div class="gallery-banner">
+                        <video autoplay loop muted playsinline ${item.thumbnail_url ? `poster="${item.thumbnail_url}"` : ''} src="${item.video_url}"></video>
+                        <div class="gallery-banner-actions">
+                            <button class="btn-icon-action" onclick="openLightbox('${item.video_url}','${safePrompt}','${item.model}','${item.aspect_ratio}','${item.resolution}','${item.duration}','${item.id}')" title="Büyüt">👁️</button>
+                            <a href="${item.video_url}" class="btn-icon-action" download title="İndir">💾</a>
+                        </div>
+                        <button class="gallery-close-btn" onclick="deleteGalleryItem('${item.id}')" title="Sil">✕</button>
+                    </div>
+                    <div class="gallery-card-sep"></div>
+                    <div class="gallery-card-body">
+                        <div class="gallery-card-prompt-row">
+                            <div class="gallery-card-prompt" title="${item.prompt}">${item.prompt}</div>
+                            <button class="btn-copy-inline" onclick="copyPromptToClipboard('${safePrompt}')" title="Kopyala">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                            </button>
+                        </div>
+                        <div class="gallery-card-specs">
+                            <span class="spec-chip">${item.model}</span>
+                            <span class="spec-chip">${item.aspect_ratio}</span>
+                            <span class="spec-chip">${item.resolution}</span>
+                            <span class="spec-chip">${item.duration}s</span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function deleteGalleryItem(id) {
+            const card = document.getElementById(`gallery-${id}`);
+            if (card) { card.style.opacity = '0'; card.style.transform = 'scale(0.95)'; }
+            fetch('/api/history/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+            .then(res => res.json()).then(data => { if (data.success) setTimeout(() => fetchHistory(), 260); }).catch(console.error);
+        }
+
+        function clearAllHistory() {
+            if (!confirm('Tüm galeri geçmişini silmek istediğinizden emin misiniz?')) return;
+            fetch('/api/history/clear-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+            .then(res => res.json()).then(data => { if (data.success) fetchHistory(); }).catch(console.error);
+        }
+
+        // ── Lightbox ──────────────────────────────────────────────────────────
+        function openLightbox(url, prompt, model, ratio, res, dur, id) {
+            const lb = document.getElementById('lightbox');
+            const vid = document.getElementById('lightboxVideo');
+            document.getElementById('lightboxVideoSrc').src = url;
+            vid.load(); vid.play();
+            document.getElementById('lb-model').textContent = model;
+            document.getElementById('lb-prompt').textContent = `"${prompt}"`;
+            document.getElementById('lb-meta').textContent = `${ratio} • ${res} • ${dur}s`;
+            const item = galleryItems.find(i => i.id === id);
+            document.getElementById('lb-date').textContent = item ? item.created_at : 'Yeni Üretim';
+            document.getElementById('lb-download').href = url;
+            const delBtn = document.getElementById('lb-delete-btn');
+            if (id) { delBtn.style.display = 'block'; delBtn.onclick = () => { deleteHistoryItem(id); closeLightbox(); }; }
+            else { delBtn.style.display = 'none'; }
+            lb.style.display = 'flex';
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox').style.display = 'none';
+            const vid = document.getElementById('lightboxVideo'); vid.pause();
+        }
+        function handleLightboxBgClick(e) { if (e.target === e.currentTarget) closeLightbox(); }
+
+        function deleteHistoryItem(id) {
+            if (!confirm('Bu videoyu galeriden silmek istediğinizden emin misiniz?')) return;
+            fetch('/api/history/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+            .then(res => res.json()).then(data => { if (data.success) { closeLightbox(); fetchHistory(); } }).catch(console.error);
+        }
+
+        // ── Clear All Generations ─────────────────────────────────────────────
+        function clearAllGenerations() {
+            if (!confirm('Tüm aktif ve tamamlanan üretimleri silmek istediğinizden emin misiniz?')) return;
+            for (const jobId in activeStreams) { activeStreams[jobId].close(); delete activeStreams[jobId]; }
+            const grid = document.getElementById('jobGrid');
+            Array.from(grid.querySelectorAll('.job-card')).forEach(card => {
+                card.style.opacity = '0'; card.style.transform = 'scale(0.95)';
+                const jobId = card.id.replace('job-', '');
+                fetch(`/api/generate/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+            });
+            setTimeout(() => {
+                grid.innerHTML = ''; activeJobsCount = 0;
+                document.getElementById('activeJobsCount').textContent = 0;
+                document.getElementById('generationsEmpty').style.display = 'flex';
+                document.getElementById('clearGenerationsBtn').style.display = 'none';
+            }, 280);
+        }
+
+        // ── Prompts CRUD ──────────────────────────────────────────────────────
+        function fetchPrompts() {
+            fetch('/api/prompts').then(res => res.json()).then(data => { userPrompts = data; renderPrompts(); }).catch(console.error);
+        }
+
+        function renderPrompts() {
+            const listGrid = document.getElementById('promptsListGrid');
+            const emptyState = document.getElementById('promptsEmpty');
+            const clearBtn = document.getElementById('clearPromptsBtn');
+            listGrid.innerHTML = '';
+            if (!userPrompts.length) { emptyState.style.display = 'flex'; if (clearBtn) clearBtn.style.display = 'none'; return; }
+            emptyState.style.display = 'none'; if (clearBtn) clearBtn.style.display = 'block';
+            userPrompts.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'prompt-user-card';
+                const safePrompt = p.prompt.replace(/'/g, "\\'");
+                const safeTag = p.tag.replace(/'/g, "\\'");
+                card.innerHTML = `
+                    <div class="prompt-user-card-header"><span class="prompt-tag">${p.tag}</span></div>
+                    <div class="prompt-user-body">"${p.prompt}"</div>
+                    <div class="prompt-user-actions">
+                        <button class="prompt-action-btn" onclick="usePromptText('${safePrompt}')">Kullan</button>
+                        <button class="prompt-action-btn" onclick="loadPromptForEdit('${p.id}','${safePrompt}','${safeTag}')">Düzenle</button>
+                        <button class="prompt-action-btn" onclick="deletePromptItem('${p.id}')" style="color:var(--danger);border-color:rgba(239,68,68,0.2);">Sil</button>
+                    </div>
+                `;
+                listGrid.appendChild(card);
+            });
+        }
+
+        function usePromptText(text) {
+            document.getElementById('promptInput').value = text;
+            switchTab('generations');
+            if (window.innerWidth <= 1024) document.querySelector('.sidebar').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function savePrompt() {
+            const promptId = document.getElementById('pmPromptId').value;
+            const tag = document.getElementById('pmPromptTag').value.trim() || 'Genel';
+            const prompt = document.getElementById('pmPromptText').value.trim();
+            if (!prompt) { alert('Lütfen prompt metni yazın!'); return; }
+            const isEdit = promptId !== '';
+            const payload = { prompt, tag }; if (isEdit) payload.id = promptId;
+            fetch(isEdit ? '/api/prompts/edit' : '/api/prompts/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            .then(res => res.json()).then(data => { if (data.error) { alert(data.error); return; } resetPromptForm(); fetchPrompts(); }).catch(console.error);
+        }
+
+        function loadPromptForEdit(id, prompt, tag) {
+            document.getElementById('pmPromptId').value = id;
+            document.getElementById('pmPromptTag').value = tag;
+            document.getElementById('pmPromptText').value = prompt;
+            document.getElementById('pmFormTitle').textContent = 'Prompt Düzenle';
+            document.getElementById('pmSaveBtn').textContent = 'Güncelle';
+            document.getElementById('pmCancelBtn').style.display = 'block';
+            if (window.innerWidth <= 1024) document.querySelector('.prompt-editor-sidebar').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function resetPromptForm() {
+            document.getElementById('pmPromptId').value = '';
+            document.getElementById('pmPromptTag').value = '';
+            document.getElementById('pmPromptText').value = '';
+            document.getElementById('pmFormTitle').textContent = 'Yeni Prompt Ekle';
+            document.getElementById('pmSaveBtn').textContent = 'Kaydet';
+            document.getElementById('pmCancelBtn').style.display = 'none';
+        }
+
+        function deletePromptItem(id) {
+            if (!confirm('Bu promptu silmek istediğinizden emin misiniz?')) return;
+            fetch('/api/prompts/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+            .then(res => res.json()).then(data => { if (data.success) fetchPrompts(); }).catch(console.error);
+        }
+
+        function clearAllPrompts() {
+            if (!confirm('Tüm promptları silmek istediğinizden emin misiniz?')) return;
+            fetch('/api/prompts/clear-all', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+            .then(res => res.json()).then(data => { if (data.success) fetchPrompts(); }).catch(console.error);
+        }
+    </script>
+    {% endif %}
+
+</body>
+</html>

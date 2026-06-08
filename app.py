@@ -357,7 +357,6 @@ def run_job_in_background(job_id):
 
         try:
             send_res = sess.post("https://www.yolly.ai/api/auth/send-code", json={"email": email}, timeout=15)
-            sess.proxies = {}
             if send_res.status_code != 200:
                 return fail(f"Kod gönderme başarısız (Status {send_res.status_code}): {send_res.text[:100]}", 22)
         except Exception as e:

@@ -10,7 +10,7 @@ import threading
 from flask import Flask, render_template, request, jsonify, Response, session, redirect, url_for
 
 try:
-    from yollyAI import eTemp, find_working_proxy, make_proxied_session
+    from yollyAI import eTemp, find_working_proxy, make_session
 except ImportError:
     import random, string
     from concurrent.futures import ThreadPoolExecutor
@@ -42,7 +42,9 @@ except ImportError:
 
     PROXYSCRAPE_URL = (
         "https://api.proxyscrape.com/v4/free-proxy-list/get"
-        "?request=display_proxies&proxy_format=protocolipport&format=text"
+        "?request=display_proxies"
+        "&proxy_format=protocolipport"
+        "&format=text"
     )
 
     def fetch_proxies():
@@ -85,16 +87,14 @@ except ImportError:
                 result_q.put(None)
 
         executor = ThreadPoolExecutor(max_workers=max_workers)
-        executor.map(probe, proxy_list)
+        executor.map(lambda p: probe(p), proxy_list)
         working = result_q.get()
         found_event.set()
         executor.shutdown(wait=False, cancel_futures=True)
         return working
 
-    def make_proxied_session(proxy_url):
+    def make_session():
         s = requests.Session()
-        if proxy_url:
-            s.proxies = {"http": proxy_url, "https": proxy_url}
         s.headers.update({
             "accept": "application/json, text/plain, */*",
             "accept-language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -283,7 +283,7 @@ def start_generation():
         'input_mode': input_mode,
         'image': memory_image,
         'created_at': time.time(),
-        'status': 'finding_proxy',
+        'status': 'registering',
         'pct': 0,
         'logs': [],
         'outputs': [],
@@ -329,110 +329,159 @@ def run_job_in_background(job_id):
     try:
         add_log("İşlem başlatıldı...", "info", 3)
 
-        # ── Step 1: Proxy Bulma ───────────────────────────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        add_log("ProxyScrape'den çalışan proxy aranıyor (paralel tarama)...", "finding_proxy", 5)
+        # ── Steps 2-6: Hesap Kayıt Döngüsü (retry ile) ──────────────────────
+        MAX_ACCOUNT_ATTEMPTS = 5
+        sess = None
 
-        working_proxy = find_working_proxy(max_workers=30)
+        for account_attempt in range(1, MAX_ACCOUNT_ATTEMPTS + 1):
+            if job_id not in ACTIVE_JOBS: return
 
-        if job_id not in ACTIVE_JOBS: return
+            if account_attempt > 1:
+                add_log(f"Yeni hesap denemesi başlatılıyor (Deneme {account_attempt}/{MAX_ACCOUNT_ATTEMPTS})...", "registering", 15)
 
-        if working_proxy:
-            add_log(f"Çalışan proxy bulundu: {working_proxy}", "finding_proxy", 15)
-            sess = make_proxied_session(working_proxy)
-        else:
-            add_log("Çalışan proxy bulunamadı. Proxysiz devam ediliyor...", "warning", 15)
-            sess = make_proxied_session(None)
+            sess = make_session()
 
-        # ── Step 2: Geçici E-posta + Kod Gönderme ───────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        add_log("Spamok üzerinden geçici e-posta oluşturuluyor...", "registering", 18)
+            # ── Step 2: Geçici E-posta + Kod Gönderme ───────────────────────
+            add_log("Spamok üzerinden geçici e-posta oluşturuluyor...", "registering", 18)
+            temp = eTemp()
+            email = temp.getEmail()
+            add_log(f"E-posta oluşturuldu: {email}", "registering", 20)
 
-        temp = eTemp()
-        email = temp.getEmail()
-        add_log(f"E-posta oluşturuldu: {email}", "registering", 20)
+            if job_id not in ACTIVE_JOBS: return
+            add_log("Yolly.AI'ye doğrulama kodu isteği gönderiliyor...", "registering", 22)
 
-        if job_id not in ACTIVE_JOBS: return
-        add_log("Yolly.AI'ye doğrulama kodu isteği gönderiliyor...", "registering", 22)
+            try:
+                send_res = sess.post("https://www.yolly.ai/api/auth/send-code", json={"email": email}, timeout=15)
+                if send_res.status_code != 200:
+                    add_log(f"Kod gönderme başarısız (Status {send_res.status_code}): {send_res.text[:100]}", "warning", 22)
+                    if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                        return fail(f"Tüm denemeler tükendi. Son hata: Kod gönderme başarısız ({send_res.status_code}).", 22)
+                    continue
+            except Exception as e:
+                add_log(f"Kod gönderme ağ hatası: {e}", "warning", 22)
+                if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                    return fail(f"Tüm denemeler tükendi. Son hata: {e}", 22)
+                continue
 
-        try:
-            send_res = sess.post("https://www.yolly.ai/api/auth/send-code", json={"email": email}, timeout=15)
-            if send_res.status_code != 200:
-                return fail(f"Kod gönderme başarısız (Status {send_res.status_code}): {send_res.text[:100]}", 22)
-        except Exception as e:
-            return fail(f"Kod gönderme ağ hatası: {e}", 22)
+            # ── Step 3: E-posta Kutusunu Tara ────────────────────────────────
+            if job_id not in ACTIVE_JOBS: return
+            add_log("Spamok kutusu kontrol ediliyor (30 saniye limit)...", "registering", 28)
+            code = temp.getVerificationCode(email, timeout=30)
 
-        # ── Step 3: E-posta Kutusunu Tara ────────────────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        add_log("Spamok kutusu kontrol ediliyor (30 saniye limit)...", "registering", 28)
+            if job_id not in ACTIVE_JOBS: return
 
-        code = temp.getVerificationCode(email, timeout=30)
+            if not code:
+                add_log("Doğrulama kodu e-postaya ulaşmadı (30s timeout), yeni hesap deneniyor...", "warning", 28)
+                if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                    return fail("Tüm denemeler tükendi. Doğrulama kodu hiç ulaşmadı.", 28)
+                continue
 
-        if job_id not in ACTIVE_JOBS: return
+            add_log(f"6 haneli doğrulama kodu yakalandı: {code}", "registering", 35)
 
-        if not code:
-            return fail("Doğrulama kodu e-postaya ulaşmadı (30s timeout).", 28)
+            # ── Step 4: CSRF Token ────────────────────────────────────────────
+            if job_id not in ACTIVE_JOBS: return
+            try:
+                csrf_res = sess.get("https://www.yolly.ai/api/auth/csrf", timeout=15)
+                if csrf_res.status_code != 200:
+                    add_log("CSRF Token alınamadı, yeni hesap deneniyor...", "warning", 36)
+                    if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                        return fail("Tüm denemeler tükendi. CSRF Token alınamadı.", 36)
+                    continue
+                csrf_token = csrf_res.json().get("csrfToken")
+            except Exception as e:
+                add_log(f"CSRF isteği hatası: {e}, yeni hesap deneniyor...", "warning", 36)
+                if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                    return fail(f"Tüm denemeler tükendi. Son hata: {e}", 36)
+                continue
 
-        add_log(f"6 haneli doğrulama kodu yakalandı: {code}", "registering", 35)
+            # ── Step 5: Kodu Doğrula (proxy retry ile) ───────────────────────
+            if job_id not in ACTIVE_JOBS: return
 
-        # ── Step 4: CSRF Token ────────────────────────────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        try:
-            csrf_res = sess.get("https://www.yolly.ai/api/auth/csrf", timeout=15)
-            if csrf_res.status_code != 200:
-                return fail("CSRF Token alınamadı.", 36)
-            csrf_token = csrf_res.json().get("csrfToken")
-        except Exception as e:
-            return fail(f"CSRF isteği hatası: {e}", 36)
+            MAX_PROXY_ATTEMPTS = 3
+            verify_success = False
 
-        # ── Step 5: Kodu Doğrula ──────────────────────────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        add_log("Doğrulama kodu Yolly.AI'ye gönderiliyor...", "registering", 40)
+            for proxy_attempt in range(1, MAX_PROXY_ATTEMPTS + 1):
+                if job_id not in ACTIVE_JOBS: return
 
-        verify_headers = dict(sess.headers)
-        verify_headers["content-type"] = "application/x-www-form-urlencoded"
-        verify_payload = {
-            "email": email,
-            "code": code,
-            "firstVisitPage": "/",
-            "redirect": "false",
-            "callbackUrl": "https://www.yolly.ai/",
-            "csrfToken": csrf_token
-        }
-        try:
-            verify_res = sess.post(
-                "https://www.yolly.ai/api/auth/callback/verification-code?",
-                data=verify_payload,
-                headers=verify_headers,
-                timeout=15
-            )
-            if verify_res.status_code != 200:
-                return fail(f"Doğrulama başarısız (Status {verify_res.status_code}).", 40)
-        except Exception as e:
-            return fail(f"Doğrulama ağ hatası: {e}", 40)
+                add_log(f"Verify isteği için proxy aranıyor (Proxy denemesi {proxy_attempt}/{MAX_PROXY_ATTEMPTS})...", "finding_proxy", 38)
+                working_proxy = find_working_proxy(max_workers=30)
 
-        add_log("Hesap doğrulandı! Session çerezleri alındı.", "registering", 46)
+                if working_proxy:
+                    add_log(f"Verify proxy'si hazır: {working_proxy}", "finding_proxy", 39)
+                    verify_proxies = {"http": working_proxy, "https": working_proxy}
+                else:
+                    add_log("Proxy bulunamadı, verify isteği proxysiz gidecek.", "warning", 39)
+                    verify_proxies = None
 
-        if job_id not in ACTIVE_JOBS: return
+                add_log("Doğrulama kodu Yolly.AI'ye gönderiliyor...", "registering", 40)
 
-        # Proxy'yi kaldır — üretim/polling kendi bağlantıyla
-        add_log("Kayıt tamam! Üretim için proxy kaldırılıyor...", "registering", 48)
-        sess.proxies = {}
+                verify_headers = dict(sess.headers)
+                verify_headers["content-type"] = "application/x-www-form-urlencoded"
+                verify_payload = {
+                    "email": email,
+                    "code": code,
+                    "firstVisitPage": "/",
+                    "redirect": "false",
+                    "callbackUrl": "https://www.yolly.ai/",
+                    "csrfToken": csrf_token
+                }
+                try:
+                    verify_res = sess.post(
+                        "https://www.yolly.ai/api/auth/callback/verification-code?",
+                        data=verify_payload,
+                        headers=verify_headers,
+                        proxies=verify_proxies,
+                        timeout=15
+                    )
+                    if verify_res.status_code != 200:
+                        add_log(f"Doğrulama başarısız (Status {verify_res.status_code}), yeni proxy deneniyor...", "warning", 40)
+                        continue
+                    verify_success = True
+                    break
+                except Exception as e:
+                    add_log(f"Doğrulama ağ hatası: {e}", "warning", 40)
+                    if proxy_attempt < MAX_PROXY_ATTEMPTS:
+                        add_log("Yeni proxy ile tekrar deneniyor...", "finding_proxy", 40)
+                    continue
 
-        # ── Step 6: Kredi Kontrolü ────────────────────────────────────────────
-        if job_id not in ACTIVE_JOBS: return
-        add_log("Hesap kredisi kontrol ediliyor...", "checking_credits", 50)
-        try:
-            credits_res = sess.get("https://www.yolly.ai/api/user/credits", timeout=15)
-            if credits_res.status_code == 200:
-                left = str(credits_res.json().get("left_credits", "0"))
-                add_log(f"Mevcut kredi: {left}", "checking_credits", 52)
-                if left == "0":
-                    return fail("Bakiye 0! Bu hesapta yeterli kredi yok.", 52)
-            else:
-                add_log(f"Kredi kontrolü başarısız ({credits_res.status_code}), devam ediliyor...", "warning", 52)
-        except Exception as e:
-            add_log(f"Kredi kontrolü ağ hatası, devam ediliyor: {e}", "warning", 52)
+            if not verify_success:
+                add_log("Tüm proxy denemeleri başarısız, yeni hesap oluşturuluyor...", "warning", 40)
+                if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                    return fail("Tüm hesap/proxy denemeleri tükendi. Doğrulama yapılamadı.", 40)
+                continue
+
+            add_log("Hesap doğrulandı! Session çerezleri alındı.", "registering", 46)
+
+            if job_id not in ACTIVE_JOBS: return
+
+            # ── Step 6: Kredi Kontrolü ────────────────────────────────────────
+            add_log("Hesap kredisi kontrol ediliyor...", "checking_credits", 50)
+            credits_ok = False
+            try:
+                credits_res = sess.get("https://www.yolly.ai/api/user/credits", timeout=15)
+                if credits_res.status_code == 200:
+                    left = credits_res.json().get("left_credits", 0)
+                    left_str = str(left)
+                    add_log(f"Mevcut kredi: {left_str}", "checking_credits", 52)
+                    if str(left) == "0" or left == 0:
+                        add_log(f"Bakiye 0! Yeni hesap deneniyor... ({account_attempt}/{MAX_ACCOUNT_ATTEMPTS})", "warning", 52)
+                        if account_attempt == MAX_ACCOUNT_ATTEMPTS:
+                            return fail("Tüm denemeler tükendi. Hiçbir hesapta kredi bulunamadı.", 52)
+                        continue
+                    else:
+                        credits_ok = True
+                else:
+                    add_log(f"Kredi kontrolü başarısız ({credits_res.status_code}), devam ediliyor...", "warning", 52)
+                    credits_ok = True  # Kredi kontrolü yapılamazsa devam et
+            except Exception as e:
+                add_log(f"Kredi kontrolü ağ hatası, devam ediliyor: {e}", "warning", 52)
+                credits_ok = True  # Kredi kontrolü yapılamazsa devam et
+
+            if credits_ok:
+                break  # Başarılı hesap bulundu, döngüden çık
+
+        if sess is None:
+            return fail("Oturum oluşturulamadı.", 20)
 
         # ── Step 7: Görsel Yükleme (Image to Video modu) ─────────────────────
         images_payload = []

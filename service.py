@@ -1,18 +1,8 @@
 """
 Service Module - Self-Contained MyEdit Online Integration
-Integrates with MyEdit Online services.
-Uses SpamOK / Temp-Mail for on-the-fly account registration and verification.
+Integrates with myEditOnline services.
+Uses SpamOK temp mail for on-the-fly account registration and verification.
 Saves created accounts directly to the database.
-
-Supported Models:
-- Image:
-  - NANO_BANANA     -> Google Gemini 2.5 Flash
-  - NANO_BANANA_2   -> Google Gemini 3.1 Flash
-  - NANO_BANANA_PRO -> Google Gemini 3 Pro
-  - GPT_IMAGE_2     -> OpenAI GPT-Image-2
-- Video:
-  - VEO_3_1         -> Google Veo 3.1 Lite
-  - GROK_VIDEO      -> Google Veo 3.1 Lite
 """
 import os
 import json
@@ -36,8 +26,11 @@ import database as db
 _shutdown_event = threading.Event()
 atexit.register(lambda: _shutdown_event.set())
 
+
+
+
 # ==============================================================================
-# MYEDIT API ENDPOINTS & CONSTANTS
+# MYEDIT API ENDPOINT'LERI VE SABITLER
 # ==============================================================================
 INIT_URL = "https://cse.cyberlink.com/cse/v2/init"
 SIGNUP_URL = "https://mauth.cyberlink.com/member-auth/public/sign-up"
@@ -53,8 +46,8 @@ MYEDIT_TTI_URL = "https://myedit.online/tti/effect"
 MYEDIT_VGEN_URL = "https://myedit.online/vgen/effect"
 MYEDIT_VGEN_BUSY_URL = "https://myedit.online/vgen/effect/busy"
 
-AES_IV = b"CyberLinkCSE"  # CSE module 12 byte constant IV
-CREDIT_IV = b"CyberLinkCredit"  # Credit module 16 byte IV and AAD
+AES_IV = b"CyberLinkCSE"  # CSE modulu icin 12 byte sabit IV
+CREDIT_IV = b"CyberLinkCredit"  # Credit modulu icin 16 byte IV ve AAD
 SID_AOL_POL = "ae44600d"  # MyEdit Service ID
 
 MYEDIT_HARDCODED_RSA_PUB = (
@@ -105,11 +98,10 @@ _TEMP_MAIL_HEADERS = {
     "user-agent": HEADERS["User-Agent"],
 }
 
-# ==============================================================================
-# MODEL CONFIGURATIONS & MAPPINGS
-# ==============================================================================
 
-# Image Models Backend Config
+# ==============================================================================
+# RESIM MODEL CONFIGURATIONS
+# ==============================================================================
 IMAGE_MODELS_CONFIG = {
     "gemini_2_5_flash": {
         "name": "Nano Banana",
@@ -169,7 +161,32 @@ IMAGE_MODELS_CONFIG = {
     }
 }
 
-# Video Models Backend Config
+# Image Model ID Mapping (Frontend / API ID -> Backend Model ID)
+IMAGE_MODEL_MAPPING = {
+    "NANO_BANANA": "gemini_2_5_flash",
+    "NANO_BANANA_2": "gemini_3_1_flash",
+    "NANO_BANANA_PRO": "gemini_3_pro",
+    "GPT_IMAGE_2": "gpt_image_2",
+    # Fallback / case-insensitive aliases
+    "gemini_2_5_flash": "gemini_2_5_flash",
+    "gemini_3_1_flash": "gemini_3_1_flash",
+    "gemini_3_pro": "gemini_3_pro",
+    "gpt_image_2": "gpt_image_2",
+    "nano_banana": "gemini_2_5_flash",
+    "nano_banana_2": "gemini_3_1_flash",
+    "nano_banana_pro": "gemini_3_pro",
+}
+
+# Direct mapping in IMAGE_MODELS_CONFIG for safety
+IMAGE_MODELS_CONFIG["NANO_BANANA"] = IMAGE_MODELS_CONFIG["gemini_2_5_flash"]
+IMAGE_MODELS_CONFIG["NANO_BANANA_2"] = IMAGE_MODELS_CONFIG["gemini_3_1_flash"]
+IMAGE_MODELS_CONFIG["NANO_BANANA_PRO"] = IMAGE_MODELS_CONFIG["gemini_3_pro"]
+IMAGE_MODELS_CONFIG["GPT_IMAGE_2"] = IMAGE_MODELS_CONFIG["gpt_image_2"]
+
+
+# ==============================================================================
+# VIDEO MODEL CONFIGURATIONS
+# ==============================================================================
 VIDEO_MODELS_CONFIG = {
     "veo_3_1_lite": {
         "name": "Veo 3.1 Lite",
@@ -177,16 +194,16 @@ VIDEO_MODELS_CONFIG = {
         "vendor": "Google",
         "supported_modes": ["TextToVideo", "ImageToVideo"],
         "supported_frame_modes": ["single", "startend"],
-        "supported_resolutions": ["720p", "1080p"],
+        "supported_resolutions": ["1080p"],
         "supported_aspect_ratios": ["16:9", "9:16"],
         "supported_durations": [4, 6, 8],
         "supported_resolutions_by_mode": {
-            "ImageToVideo": ["720p", "1080p"],
+            "ImageToVideo": ["1080p"],
             "TextToVideo": ["720p", "1080p"],
         },
         "supported_durations_by_mode": {
             "ImageToVideo": [4, 6, 8],
-            "TextToVideo": [4, 6, 8],
+            "TextToVideo": [4, 8],
         },
         "action_id": "genvideo_1_sec_google_veo3.1lite_{sound}_{resolution}",
         "action_id_i2v": "genvideo_1_sec_google_custom_veo3.1lite_{sound}_{frame_mode}_{resolution}",
@@ -209,38 +226,28 @@ VIDEO_MODELS_CONFIG = {
     }
 }
 
-# Mapping dictionaries (Frontend/API Model ID -> Backend Config Key)
-IMAGE_MODEL_MAPPING = {
-    "NANO_BANANA": "gemini_2_5_flash",
-    "NANO_BANANA_2": "gemini_3_1_flash",
-    "NANO_BANANA_PRO": "gemini_3_pro",
-    "GPT_IMAGE_2": "gpt_image_2",
-    # Direct / lower-case keys for compatibility
-    "nano_banana": "gemini_2_5_flash",
-    "nano_banana_2": "gemini_3_1_flash",
-    "nano_banana_pro": "gemini_3_pro",
-    "gpt_image_2": "gpt_image_2",
-    "gemini_2_5_flash": "gemini_2_5_flash",
-    "gemini_3_1_flash": "gemini_3_1_flash",
-    "gemini_3_pro": "gemini_3_pro",
-}
-
+# Video Model ID Mapping (Frontend / API ID -> Backend Model ID)
 VIDEO_MODEL_MAPPING = {
     "VEO_3_1": "veo_3_1_lite",
     "GROK_VIDEO": "veo_3_1_lite",
-    # Direct / lower-case keys for compatibility
+    # Fallback / case-insensitive aliases
+    "veo_3_1_lite": "veo_3_1_lite",
     "veo_3_1": "veo_3_1_lite",
     "grok_video": "veo_3_1_lite",
-    "veo_3_1_lite": "veo_3_1_lite",
 }
 
-# Available Models for Frontend Listing & API Validation
+# Direct mapping in VIDEO_MODELS_CONFIG for safety
+VIDEO_MODELS_CONFIG["VEO_3_1"] = VIDEO_MODELS_CONFIG["veo_3_1_lite"]
+VIDEO_MODELS_CONFIG["GROK_VIDEO"] = VIDEO_MODELS_CONFIG["veo_3_1_lite"]
+
+MODELS = {} # Compatibility mapping
+
 AVAILABLE_MODELS = {
     "image": [
         {
             "id": "NANO_BANANA",
             "name": "Nano Banana",
-            "description": "Nano Banana (Gemini 2.5 Flash) by Google - Supports up to 3 Reference Images",
+            "description": "Nano Banana by Google - Supports up to 3 Reference Images",
             "supports_reference_images": True,
             "max_reference_images": 3,
             "supported_sizes": ["1:1", "16:9", "9:16", "4:3", "3:4"],
@@ -252,7 +259,7 @@ AVAILABLE_MODELS = {
         {
             "id": "NANO_BANANA_2",
             "name": "Nano Banana 2",
-            "description": "Nano Banana 2 (Gemini 3.1 Flash) by Google - Supports up to 14 Reference Images",
+            "description": "Nano Banana 2 by Google - Supports up to 14 Reference Images",
             "supports_reference_images": True,
             "max_reference_images": 14,
             "supported_sizes": ["1:1", "16:9", "9:16", "4:3", "3:4"],
@@ -264,7 +271,7 @@ AVAILABLE_MODELS = {
         {
             "id": "NANO_BANANA_PRO",
             "name": "Nano Banana Pro",
-            "description": "Nano Banana Pro (Gemini 3 Pro) by Google - Supports up to 14 Reference Images",
+            "description": "Nano Banana Pro by Google - Supports up to 14 Reference Images",
             "supports_reference_images": True,
             "max_reference_images": 14,
             "supported_sizes": ["1:1", "16:9", "9:16", "4:3", "3:4"],
@@ -289,7 +296,7 @@ AVAILABLE_MODELS = {
     "video": [
         {
             "id": "VEO_3_1",
-            "name": "Veo 3.1",
+            "name": "Veo 3.1 Lite",
             "description": "Veo 3.1 Lite by Google - Supports Start/End Frame",
             "supports_start_frame": True,
             "supports_end_frame": True,
@@ -325,12 +332,11 @@ AVAILABLE_MODELS = {
 }
 
 def get_available_models(mode=None):
-    """Returns available models with real metadata for frontend and API usage."""
     import copy
     models = copy.deepcopy(AVAILABLE_MODELS)
     for model in models.get('video', []):
-        real_key = VIDEO_MODEL_MAPPING.get(model['id'], model['id'])
-        config = VIDEO_MODELS_CONFIG.get(real_key, {})
+        actual_model_id = VIDEO_MODEL_MAPPING.get(model['id'], model['id'])
+        config = VIDEO_MODELS_CONFIG.get(actual_model_id, {})
         if 'supported_modes' in config:
             model['supported_modes'] = config['supported_modes']
         if 'reference_media_limit' in config:
@@ -346,13 +352,12 @@ def get_available_models(mode=None):
             model['supported_resolutions_by_mode'] = by_mode_res
         if by_mode_dur:
             model['supported_durations_by_mode'] = by_mode_dur
-
     if mode:
         return models.get(mode, [])
     return models
 
 # ==============================================================================
-# TEMP MAIL CLIENT
+# MYEDIT ONLINE ALTYAPI VE KRIPTOGRAFİK YARDIMCILAR (SINGLE FILE)
 # ==============================================================================
 
 class TempMailClient:
@@ -424,16 +429,17 @@ class TempMailClient:
 
         raise TimeoutError("Aktivasyon maili gelmedi!")
 
-# ==============================================================================
-# MEMBER AUTH & CSE ENCRYPTION HELPERS
-# ==============================================================================
+# ================= MemberAuth Enkripsyon =================
 
 def create_member_auth_payload(user_data: dict):
     """MemberAuth API icin RSA-OAEP + AES-256-GCM sifreli payload uretir."""
     der_bytes = base64.b64decode(MEMBER_AUTH_PUB_KEY)
     public_key = serialization.load_der_public_key(der_bytes)
 
+    # 1. Rastgele 256-bit AES-GCM Anahtari uret
     aes_key = AESGCM.generate_key(bit_length=256)
+
+    # 2. AES anahtarini Sunucu RSA Acik Anahtari ile sifrele
     rsa_encrypted_aes_key = public_key.encrypt(
         aes_key,
         padding.OAEP(
@@ -444,6 +450,7 @@ def create_member_auth_payload(user_data: dict):
     )
     a_param = base64.b64encode(rsa_encrypted_aes_key).decode("utf-8")
 
+    # 3. Veriyi AES-GCM ile sifrele (IV = b"CLMemberAuth")
     json_bytes = json.dumps(user_data, separators=(",", ":")).encode("utf-8")
     aesgcm = AESGCM(aes_key)
     cipher_bytes = aesgcm.encrypt(MEMBER_AUTH_IV, json_bytes, None)
@@ -461,6 +468,8 @@ def decrypt_member_auth_response(response_b64: str, aes_key: bytes):
     aesgcm = AESGCM(aes_key)
     decrypted_bytes = aesgcm.decrypt(MEMBER_AUTH_IV, enc_bytes, None)
     return json.loads(decrypted_bytes.decode("utf-8"))
+
+# ================= CSE Enkripsyon =================
 
 def get_server_public_key():
     resp = requests.post(INIT_URL, json={"p": "myedit"}, headers=HEADERS, timeout=10)
@@ -666,17 +675,17 @@ def check_task_bonus(member_token: str, feature_id: str = "TextToImage"):
         return None
 
 def collect_all_bonuses(member_token: str):
-    """Kullanicinin tum aktif task bonuslarini ve gunluk bonusunu toplar."""
+    """Kullanicinin tum aktif task bonuslarini (kredilerini) ve gunluk bonusunu toplar (toplam 174 kredi)."""
     print("\n[Bonuses] Tum gunluk ve gorev bonuslari toplaniyor...")
     
-    # 1. Gunluk Bonus
+    # 1. Gunluk Bonus (+3 Kredi)
     try:
         daily_res = get_daily_bonus(member_token)
         print(f"  -> Gunluk Bonus Toplama Sonucu: {daily_res.get('result', daily_res)}")
     except Exception as e:
         print(f"  [!] Gunluk bonus toplama hatasi: {e}")
         
-    # 2. Aktif Gorev Bonuslari
+    # 2. Aktif Gorev Bonuslari (Toplam 171 Kredi)
     active_tasks = [
         "TextToImage",      # 14 Kredi
         "AICollage",        # 6 Kredi
@@ -694,6 +703,7 @@ def collect_all_bonuses(member_token: str):
         except Exception as e:
             print(f"  [!] Gorev bonusu ({task_id}) toplanirken hata: {e}")
             
+    # Toplam Kredi Durumunu Yazdir
     try:
         credits_json = get_member_remaining_credits(member_token)
         if credits_json:
@@ -917,7 +927,7 @@ def generate_ai_image_service(
     member_token: str,
     user_prompt: str = "a majestic fantasy landscape, digital art, highly detailed 8k",
     image_paths: list = None,
-    model_key: str = "gemini_2_5_flash",
+    model_key: str = "NANO_BANANA",
     style_id: str = None,
     aspect_ratio: str = "1:1",
     resolution: str = "1K",
@@ -926,12 +936,11 @@ def generate_ai_image_service(
     filename_prefix: str = "",
     task_id: str = None,
 ):
-    # Resolve through mapping if frontend name passed
-    resolved_model = IMAGE_MODEL_MAPPING.get(model_key, model_key)
-    if resolved_model not in IMAGE_MODELS_CONFIG:
-        resolved_model = "gemini_2_5_flash"
+    model_key = IMAGE_MODEL_MAPPING.get(model_key, model_key)
+    if model_key not in IMAGE_MODELS_CONFIG:
+        raise ValueError(f"Unsupported model: {model_key}")
 
-    model_data = IMAGE_MODELS_CONFIG[resolved_model]
+    model_data = IMAGE_MODELS_CONFIG[model_key]
     if not style_id:
         style_id = model_data.get("default_style", "Style_Default")
 
@@ -947,17 +956,22 @@ def generate_ai_image_service(
             image_paths = image_paths[:ref_limit]
         has_reference = True
 
+    is_style_ref = model_data.get("effect_type") == "TtiStyleRef"
     try:
         b_size = int(batch_size)
     except ValueError:
         b_size = 1
 
-    feature_id_val = "TextToImage"
-    mode_key = "enable" if has_reference else "none"
-    credit_res_map = model_data["credits"].get(mode_key, model_data["credits"].get("none", {}))
-    credit_cost = credit_res_map.get(resolution, list(credit_res_map.values())[0] if credit_res_map else 2)
-    total_credit_cost = credit_cost * b_size
-    action_id_val = f"{model_data['actionId_prefix']}_{mode_key}_{resolution}"
+    if is_style_ref:
+        feature_id_val = "TtiStyleRef"
+        action_id_val = f"gen_{b_size}_img"
+        total_credit_cost = 1 * b_size
+    else:
+        feature_id_val = "TextToImage"
+        mode_key = "enable" if has_reference else "none"
+        credit_cost = model_data["credits"][mode_key][resolution]
+        total_credit_cost = credit_cost * b_size
+        action_id_val = f"{model_data['actionId_prefix']}_{mode_key}_{resolution}"
 
     sync_feature_credit(feature_id=feature_id_val, action_id=action_id_val, credit=total_credit_cost)
     rsa_pub_key = get_myedit_rsa_public_key()
@@ -969,8 +983,8 @@ def generate_ai_image_service(
             with open(p, "rb") as f:
                 loaded_images_bytes.append(f.read())
 
-    # For Google & OpenAI models (version 5), MyEdit expects a source placeholder image if none provided
-    if not loaded_images_bytes:
+    version_val = "4" if ("flux" in model_key or model_key == "z_image") else "5"
+    if (version_val == "5" or is_style_ref) and not loaded_images_bytes:
         from PIL import Image
         import io
         img = Image.new('RGB', (512, 512), color=(120, 160, 220))
@@ -999,13 +1013,16 @@ def generate_ai_image_service(
     }
 
     if loaded_images_bytes:
-        if image_paths and len(image_paths) > 0:
-            ext = os.path.splitext(image_paths[0])[1].replace(".", "").lower() or "jpg"
-            if ext == "jpeg":
-                ext = "jpg"
+        if is_style_ref:
+            filename_val = "TEXT_TO_IMAGE_STYLE_source"
         else:
-            ext = "jpg"
-        filename_val = f"TEXT_TO_IMAGE_source_0.{ext}"
+            if image_paths and len(image_paths) > 0:
+                ext = os.path.splitext(image_paths[0])[1].replace(".", "").lower() or "jpg"
+                if ext == "jpeg":
+                    ext = "jpg"
+            else:
+                ext = "jpg"
+            filename_val = f"TEXT_TO_IMAGE_source_0.{ext}"
         form_data_init["filename"] = filename_val
         form_data_init["filesize"] = str(len(loaded_images_bytes[0]))
 
@@ -1033,13 +1050,16 @@ def generate_ai_image_service(
         }
 
         for idx, img_bytes in enumerate(loaded_images_bytes):
-            if image_paths and idx < len(image_paths):
-                ext = os.path.splitext(image_paths[idx])[1].replace(".", "").lower() or "jpg"
-                if ext == "jpeg":
-                    ext = "jpg"
+            if is_style_ref:
+                fname = "TEXT_TO_IMAGE_STYLE_source"
             else:
-                ext = "jpg"
-            fname = f"TEXT_TO_IMAGE_source_{idx}.{ext}"
+                if image_paths and idx < len(image_paths):
+                    ext = os.path.splitext(image_paths[idx])[1].replace(".", "").lower() or "jpg"
+                    if ext == "jpeg":
+                        ext = "jpg"
+                else:
+                    ext = "jpg"
+                fname = f"TEXT_TO_IMAGE_source_{idx}.{ext}"
             fsize = str(len(img_bytes))
 
             req_ts_ms = int(time.time() * 1000)
@@ -1080,7 +1100,7 @@ def generate_ai_image_service(
         "cl_sid": SID_AOL_POL,
         "feature_id": feature_id_val,
         "action_id": action_id_val,
-        "unit": int(batch_size),
+        "unit": 1 if is_style_ref else int(batch_size),
         "total_credit": total_credit_cost
     }
     consumption_param = encrypt_myedit_aes_gcm(
@@ -1090,21 +1110,41 @@ def generate_ai_image_service(
         s_id_int
     )
 
-    form_data_apply = {
-        "style_id": style_id,
-        "style_prompt": "",
-        "version": "5",
-        "aspect_ratio": aspect_ratio,
-        "output_format": output_format,
-        "user_prompt": user_prompt,
-        "batch_size": str(batch_size),
-        "consumption": consumption_param,
-        "cloud_sync": "true",
-        "alias": alias_str,
-        "effect": "TextToImage",
-        "resolution": resolution,
-        "sources": sources_str
-    }
+    if is_style_ref:
+        form_data_apply = {
+            "source": str(uploaded_sources_list[0]) if uploaded_sources_list else "1",
+            "aspect_ratio": aspect_ratio,
+            "user_prompt": user_prompt,
+            "need_translate": "true",
+            "need_bad_word_check": "false",
+            "batch_size": str(batch_size),
+            "consumption": consumption_param,
+            "cloud_sync": "true",
+            "alias": alias_str,
+            "effect": "TtiStyleRef",
+        }
+    else:
+        form_data_apply = {
+            "style_id": style_id,
+            "style_prompt": "",
+            "version": version_val,
+            "aspect_ratio": aspect_ratio,
+            "output_format": output_format,
+            "user_prompt": user_prompt,
+            "batch_size": str(batch_size),
+            "consumption": consumption_param,
+            "cloud_sync": "true",
+            "alias": alias_str,
+            "effect": "TextToImage",
+        }
+
+        if "flux" not in model_key:
+            form_data_apply["resolution"] = resolution
+        if has_reference or "flux" not in model_key:
+            form_data_apply["sources"] = sources_str
+        if "flux" in model_key:
+            form_data_apply["need_translate"] = "true"
+            form_data_apply["need_bad_word_check"] = "false"
 
     files_apply = {k: (None, str(v)) for k, v in form_data_apply.items()}
 
@@ -1123,6 +1163,7 @@ def generate_ai_image_service(
     delay = polling.get("delay", 5)
 
     max_attempts = 120
+    decrypted_files = []
     for i in range(max_attempts):
         time.sleep(delay)
         req_ts_ms = int(time.time() * 1000)
@@ -1140,6 +1181,8 @@ def generate_ai_image_service(
             dec_metadata = None
             for idx, f in enumerate(files):
                 furl = f.get("url", "")
+                task_info = f.get("task", {})
+                # Her zaman ilk oturum anahtari (p_key) kullanilmalidir.
                 enc_key = init_json.get("p_key")
                 enc_iv = init_json.get("p_iv")
 
@@ -1170,7 +1213,7 @@ def generate_ai_image_service(
 def generate_ai_video_service(
     member_token: str,
     user_prompt: str = "a cute astronaut cat floating in space station, cinematic lighting",
-    model_key: str = "veo_3_1_lite",
+    model_key: str = "VEO_3_1",
     aspect_ratio: str = "16:9",
     resolution: str = "1080p",
     processing_duration: int = 4,
@@ -1184,36 +1227,73 @@ def generate_ai_video_service(
     filename_prefix: str = "",
     task_id: str = None,
 ):
-    # Resolve through mapping
-    resolved_model = VIDEO_MODEL_MAPPING.get(model_key, model_key)
-    model_data = VIDEO_MODELS_CONFIG.get(resolved_model, VIDEO_MODELS_CONFIG["veo_3_1_lite"])
-    
+    actual_model_key = VIDEO_MODEL_MAPPING.get(model_key, model_key)
+    model_data = VIDEO_MODELS_CONFIG.get(actual_model_key, VIDEO_MODELS_CONFIG.get("veo_3_1_lite"))
     if isinstance(model_data["model"], dict):
         model_name_str = model_data["model"].get(effect_mode, list(model_data["model"].values())[0])
     else:
         model_name_str = model_data["model"]
     vendor_str = model_data["vendor"]
 
+    if effect_mode == "ReferenceToVideo":
+        limit = model_data.get("reference_media_limit", {})
+        supported_types = limit.get("supported_types", ["image"])
+        num_images = len(ref_images) if ref_images else 0
+        num_videos = len(ref_videos) if ref_videos else 0
+        
+        if num_images > 0 and "image" not in supported_types:
+            raise ValueError("Reference images not supported.")
+        if num_videos > 0 and "video" not in supported_types:
+            raise ValueError("Reference videos not supported.")
+            
+        max_images = limit.get("max_images")
+        max_videos = limit.get("max_videos")
+        max_total = limit.get("max_total", (max_images or 0) + (max_videos or 0))
+        
+        if max_images and num_images > max_images:
+            raise ValueError("Image count exceeds limit.")
+        if max_videos and num_videos > max_videos:
+            raise ValueError("Video count exceeds limit.")
+        if max_total and (num_images + num_videos) > max_total:
+            raise ValueError("Total references exceed limit.")
+
+    SORA_RESOLUTION_MAP = {
+        ("720p", "16:9"): "1280:720",
+        ("720p", "9:16"): "720:1280",
+        ("1080p", "16:9"): "1792:1024",
+        ("1080p", "9:16"): "1024:1792",
+    }
+
     if effect_mode == "ImageToVideo" and last_image_path:
         frame_mode = "startend"
 
     prepared_media = []
     if effect_mode == "ImageToVideo" and source_image_path and os.path.exists(source_image_path):
-        try:
-            ar_w, ar_h = map(int, aspect_ratio.split(":"))
-        except Exception:
-            ar_w, ar_h = 16, 9
-        
-        h_val = 1080 if resolution == "1080p" else 720
-        if ar_w == 16 and ar_h == 9:
-            target_w, target_h = int(h_val * 16 / 9), h_val
-        elif ar_w == 9 and ar_h == 16:
-            target_w, target_h = h_val, int(h_val * 16 / 9)
-        elif ar_w == 1 and ar_h == 1:
-            target_w, target_h = (1024, 1024) if h_val >= 720 else (720, 720)
+        target_w, target_h = None, None
+        if vendor_str == "OpenAI":
+            sora_res = SORA_RESOLUTION_MAP.get((resolution, aspect_ratio), "1280:720")
+            target_w, target_h = map(int, sora_res.split(":"))
         else:
-            target_w, target_h = int(h_val * ar_w / ar_h), h_val
-    
+            try:
+                ar_w, ar_h = map(int, aspect_ratio.split(":"))
+            except Exception:
+                ar_w, ar_h = 16, 9
+            
+            h_val = 720
+            if resolution == "480p": h_val = 480
+            elif resolution == "540p": h_val = 540
+            elif resolution == "1080p": h_val = 1080
+            elif resolution == "4k": h_val = 2160
+            
+            if ar_w == 16 and ar_h == 9:
+                target_w, target_h = int(h_val * 16 / 9), h_val
+            elif ar_w == 9 and ar_h == 16:
+                target_w, target_h = h_val, int(h_val * 16 / 9)
+            elif ar_w == 1 and ar_h == 1:
+                target_w, target_h = (1024, 1024) if h_val >= 720 else (720, 720)
+            else:
+                target_w, target_h = int(h_val * ar_w / ar_h), h_val
+        
         temp1 = prepare_image_for_vgen(source_image_path, aspect_ratio, target_w, target_h, suffix="_first")
         prepared_media.append({
             "path": temp1,
@@ -1230,6 +1310,18 @@ def generate_ai_video_service(
                 "type": "image",
                 "is_temp": temp2 != last_image_path
             })
+            
+    elif effect_mode == "ReferenceToVideo":
+        if ref_images:
+            for idx, item in enumerate(ref_images):
+                img_path = item["path"] if isinstance(item, dict) else item
+                if os.path.exists(img_path):
+                    prepared_media.append({"path": img_path, "tag": f"@image{idx+1}", "type": "image", "is_temp": False})
+        if ref_videos:
+            for idx, item in enumerate(ref_videos):
+                vid_path = item["path"] if isinstance(item, dict) else item
+                if os.path.exists(vid_path):
+                    prepared_media.append({"path": vid_path, "tag": f"@video{idx+1}", "type": "video", "is_temp": False})
 
     def cleanup_temp_images():
         for media in prepared_media:
@@ -1247,7 +1339,11 @@ def generate_ai_video_service(
         elif "action_id_i2v" in model_data:
             action_id_str = model_data["action_id_i2v"].format(sound=action_id_sound, resolution=resolution, frame_mode=frame_mode)
         else:
-            action_id_str = model_data["action_id"].format(sound=action_id_sound, resolution=resolution)
+            overrides_t2v = model_data.get("action_id_overrides", {})
+            if resolution in overrides_t2v:
+                action_id_str = overrides_t2v[resolution].format(sound=action_id_sound, resolution=resolution)
+            else:
+                action_id_str = model_data["action_id"].format(sound=action_id_sound, resolution=resolution)
     else:
         overrides = model_data.get("action_id_overrides", {})
         if resolution in overrides:
@@ -1255,13 +1351,16 @@ def generate_ai_video_service(
         else:
             action_id_str = model_data["action_id"].format(sound=action_id_sound, resolution=resolution)
             
-    credit_map = model_data.get("credit_map", {})
-    credit_cost = credit_map.get((effect_mode, sound, frame_mode, resolution))
-    if credit_cost is None:
-        credit_cost = credit_map.get((effect_mode, sound, resolution))
-    if credit_cost is None:
-        credit_cost = credit_map.get((sound, resolution))
-    if credit_cost is None:
+    credit_map = model_data.get("credit_map")
+    if credit_map:
+        credit_cost = credit_map.get((effect_mode, sound, frame_mode, resolution))
+        if credit_cost is None:
+            credit_cost = credit_map.get((effect_mode, sound, resolution))
+        if credit_cost is None:
+            credit_cost = credit_map.get((sound, resolution))
+        if credit_cost is None:
+            credit_cost = model_data.get("credit", 3)
+    else:
         credit_cost = model_data.get("credit", 3)
 
     get_member_remaining_credits(member_token)
@@ -1331,6 +1430,7 @@ def generate_ai_video_service(
         for i, item in enumerate(prepared_media):
             if i < len(media_info_list) and "url" in media_info_list[i]:
                 upload_url = media_info_list[i]["url"]
+                
                 clean_url = upload_url.split("?")[0]
                 uploaded_reference_urls.append(clean_url)
 
@@ -1369,12 +1469,11 @@ def generate_ai_video_service(
         "is_custom": "true",
         "is_fixed_model": "true",
         "effect": effect_mode,
-        "aspect_ratio": aspect_ratio,
-        "resolution": resolution,
     }
 
-    model_mode = model_data.get("mode", "std")
-    form_data_apply["mode"] = model_mode
+    model_mode = model_data.get("mode")
+    if not model_mode:
+        model_mode = "pro" if resolution in ["1080p", "4k"] else "std"
 
     if prepared_media:
         media_info_list = init_json.get("media_info", [])
@@ -1384,16 +1483,77 @@ def generate_ai_video_service(
 
         if effect_mode == "ImageToVideo":
             img_w, img_h = get_image_dimensions(prepared_media[0]["path"])
-            form_data_apply["width"] = str(img_w)
-            form_data_apply["height"] = str(img_h)
-            
-            if end_frame_id is not None:
-                form_data_apply["sources"] = json.dumps([first_frame_id, -1, end_frame_id])
-                last_image_file_size = os.path.getsize(prepared_media[1]["path"])
-                last_image_obj = {"media_id": end_frame_id, "filesize": last_image_file_size, "width": img_w, "height": img_h}
-                form_data_apply["last_image"] = json.dumps(last_image_obj, separators=(",", ":"))
-            else:
+            image_file_size = os.path.getsize(prepared_media[0]["path"])
+
+            if vendor_str in ["Alibaba", "Pixverse", "BytePlus"]:
+                form_data_apply["width"] = str(img_w)
+                form_data_apply["height"] = str(img_h)
+                if vendor_str == "Alibaba":
+                    form_data_apply["aspect_ratio"] = aspect_ratio
+                    form_data_apply["resolution"] = resolution.upper()
+                    if model_mode:
+                        form_data_apply["mode"] = model_mode
+                else:
+                    form_data_apply["mode"] = model_mode
+                
+                if end_frame_id is not None:
+                    form_data_apply["sources"] = json.dumps([first_frame_id, end_frame_id])
+                    image_list_obj = [
+                        {"media_id": first_frame_id, "filesize": image_file_size, "width": img_w, "height": img_h, "type": "first_frame"},
+                        {"media_id": end_frame_id, "filesize": os.path.getsize(prepared_media[1]["path"]), "width": img_w, "height": img_h, "type": "end_frame"}
+                    ]
+                else:
+                    form_data_apply["sources"] = json.dumps([first_frame_id])
+                    image_list_obj = [
+                        {"media_id": first_frame_id, "filesize": image_file_size, "width": img_w, "height": img_h, "type": "first_frame"}
+                    ]
+                form_data_apply["image_list"] = json.dumps(image_list_obj, separators=(",", ":"))
+
+            elif vendor_str == "OpenAI":
+                sora_res = SORA_RESOLUTION_MAP.get((resolution, aspect_ratio), "1280:720")
+                target_w, target_h = sora_res.split(":")
+                form_data_apply["width"] = target_w
+                form_data_apply["height"] = target_h
+                form_data_apply["resolution"] = sora_res
                 form_data_apply["sources"] = json.dumps([first_frame_id])
+            else:
+                form_data_apply["width"] = str(img_w)
+                form_data_apply["height"] = str(img_h)
+                form_data_apply["mode"] = model_mode
+                
+                if end_frame_id is not None:
+                    form_data_apply["sources"] = json.dumps([first_frame_id, -1, end_frame_id])
+                    last_image_file_size = os.path.getsize(prepared_media[1]["path"])
+                    last_image_obj = {"media_id": end_frame_id, "filesize": last_image_file_size, "width": img_w, "height": img_h}
+                    form_data_apply["last_image"] = json.dumps(last_image_obj, separators=(",", ":"))
+                else:
+                    form_data_apply["sources"] = json.dumps([first_frame_id])
+                    
+        elif effect_mode == "ReferenceToVideo":
+            form_data_apply["sources"] = json.dumps(media_ids)
+            form_data_apply["effect"] = "RefToVideo"
+            image_list_obj = []
+            video_list_obj = []
+            for j, item in enumerate(prepared_media):
+                if item["type"] == "image":
+                    w_j, h_j = get_image_dimensions(item["path"])
+                    size_j = os.path.getsize(item["path"])
+                    image_list_obj.append({"media_id": media_ids[j], "filesize": size_j, "width": w_j, "height": h_j, "tag": item["tag"]})
+                elif item["type"] == "video":
+                    size_j = os.path.getsize(item["path"])
+                    video_list_obj.append({"media_id": media_ids[j], "tag": item["tag"], "filesize": size_j})
+            form_data_apply["image_list"] = json.dumps(image_list_obj, separators=(",", ":"))
+            form_data_apply["video_list"] = json.dumps(video_list_obj, separators=(",", ":"))
+            form_data_apply["audio_spec"] = json.dumps({"mode": "native"}, separators=(",", ":"))
+            form_data_apply["aspect_ratio"] = aspect_ratio
+            form_data_apply["resolution"] = resolution
+            if model_mode:
+                form_data_apply["mode"] = model_mode
+    else:
+        form_data_apply["aspect_ratio"] = aspect_ratio
+        form_data_apply["resolution"] = resolution
+        if model_mode:
+            form_data_apply["mode"] = model_mode
 
     files_apply = {k: (None, str(v)) for k, v in form_data_apply.items()}
     resp_apply = requests.patch(apply_url, files=files_apply, headers=apply_headers, timeout=60)
@@ -1411,6 +1571,7 @@ def generate_ai_video_service(
     delay = polling.get("delay", 5)
 
     max_attempts = 120
+    decrypted_files = []
     for i in range(max_attempts):
         time.sleep(delay)
         req_ts_ms = int(time.time() * 1000)
@@ -1428,6 +1589,8 @@ def generate_ai_video_service(
             dec_metadata = None
             for idx, f in enumerate(files):
                 furl = f.get("url", "")
+                task_info = f.get("task", {})
+                # Her zaman ilk oturum anahtari (p_key) kullanilmalidir.
                 enc_key = init_json.get("p_key")
                 enc_iv = init_json.get("p_iv")
 
@@ -1435,6 +1598,7 @@ def generate_ai_video_service(
                     # If this is a thumbnail URL returned instead of the video, fetch the real mp4 URL
                     if "thumbnail" in furl.lower() and idx == 0:
                         try:
+                            import re
                             match = re.search(r'/Credit/(\d+)/', furl)
                             if match:
                                 consume_task_id = match.group(1)
@@ -1454,6 +1618,7 @@ def generate_ai_video_service(
                                 
                                 result_files = consume_json.get("files", [])
                                 if result_files:
+                                    # Find the mp4 file in the consume files list
                                     mp4_file = None
                                     for rf in result_files:
                                         rf_url = rf.get("url", "")
@@ -1466,6 +1631,8 @@ def generate_ai_video_service(
                                         mp4_file = result_files[0]
                                     
                                     furl = mp4_file.get("url", furl)
+                                    rf_task = mp4_file.get("task", {})
+                                    # Her zaman ilk oturum anahtari kullanilmaya devam edilmelidir.
                         except Exception as e:
                             print(f"[THUMBNAIL-FIX] Failed to fetch real video URL: {e}")
 
@@ -1496,7 +1663,7 @@ def generate_ai_video_service(
     return {"status": "Timeout", "reference_urls": uploaded_reference_urls}
 
 # ==============================================================================
-# ACCOUNT CACHE & REUSE SYSTEM
+# service.py ACCOUNT CACHE & REUSE SYSTEM
 # ==============================================================================
 
 ACTIVE_ACCOUNTS = {} # {api_key_id: {"email": email, "password": password, "member_token": token, "timestamp": time.time()}}
@@ -1517,7 +1684,9 @@ def mark_account_exhausted(api_key_id, email):
         print(f"[ACCOUNT] Error marking account exhausted: {e}")
 
 def create_myedit_account(api_key_id):
-    """Creates a new MyEdit account dynamically on-the-fly."""
+    """Creates a new MyEdit account dynamically on-the-fly.
+    Uses TempMailClient for temp mail. Saves account to database with used=0.
+    """
     try:
         temp_mail = TempMailClient()
         email = temp_mail.get_email()
@@ -1540,6 +1709,7 @@ def create_myedit_account(api_key_id):
         if not activate_account(activation_url):
             print("[-] Activation not verified, trying login anyway...")
 
+        # Wait for activation propagation
         time.sleep(3)
 
         # 4. Login
@@ -1554,7 +1724,7 @@ def create_myedit_account(api_key_id):
             print("[-] Login failed, no memberToken.")
             return None, None
         
-        # 5. Collect all daily and task bonuses
+        # 5. Collect all daily and task bonuses (174 credits total)
         try:
             collect_all_bonuses(member_token)
         except Exception as e:
@@ -1574,7 +1744,9 @@ def create_myedit_account_wrapper(api_key_id):
     return create_myedit_account(api_key_id)
 
 def get_or_create_active_account(api_key_id, task_id=None, force_new=False):
-    """Gets an active account from memory cache, existing DB account, or creates a new one."""
+    """Gets an active account from memory cache, existing DB account, or creates a new one.
+    Ensures maximum speed by reusing the token until credits are exhausted.
+    """
     # 1. Check memory cache if not force_new
     if not force_new:
         with ACCOUNT_LOCK:
@@ -1656,8 +1828,10 @@ def get_or_create_active_account(api_key_id, task_id=None, force_new=False):
     return None, None
 
 def deduct_api_key_quota(api_key_id, task_id=None):
-    """Deducts 1 account/quota from the API key's available accounts upon successful task completion."""
-    conn = None
+    """Deducts 1 account/quota from the API key's available accounts upon successful task completion.
+    Prioritizes accounts other than the currently active working account so the active account remains intact in DB.
+    Even if the active account's DB row is consumed, its in-memory session (ACTIVE_ACCOUNTS) stays fully operational.
+    """
     try:
         active_acc = ACTIVE_ACCOUNTS.get(api_key_id)
         active_email = active_acc.get("email") if active_acc else None
@@ -1667,6 +1841,7 @@ def deduct_api_key_quota(api_key_id, task_id=None):
         consumed_email = None
 
         if db.DB_TYPE == 'postgresql':
+            # 1. Önce aktif çalışan hesap DIŞINDAKİ boş bir hesabı düş
             if active_email:
                 cursor.execute(
                     'SELECT email FROM accounts WHERE api_key_id = %s AND used = 0 AND email != %s LIMIT 1',
@@ -1676,6 +1851,7 @@ def deduct_api_key_quota(api_key_id, task_id=None):
                 if row:
                     consumed_email = row['email'] if isinstance(row, dict) else row[0]
             
+            # 2. Eğer başka hesap yoksa (sadece aktif hesap kalmışsa) onu düş
             if not consumed_email:
                 cursor.execute(
                     'SELECT email FROM accounts WHERE api_key_id = %s AND used = 0 LIMIT 1',
@@ -1698,6 +1874,7 @@ def deduct_api_key_quota(api_key_id, task_id=None):
                 conn.commit()
                 print(f"[QUOTA] Successfully deducted 1 quota ({consumed_email}) for task {task_id}.")
         else:
+            # SQLite versiyonu
             if active_email:
                 cursor.execute(
                     'SELECT email FROM accounts WHERE api_key_id = ? AND used = 0 AND email != ? LIMIT 1',
@@ -1728,16 +1905,11 @@ def deduct_api_key_quota(api_key_id, task_id=None):
                     )
                 conn.commit()
                 print(f"[QUOTA] Successfully deducted 1 quota ({consumed_email}) for task {task_id}.")
+        conn.close()
         return consumed_email
     except Exception as e:
         print(f"[QUOTA] Error deducting quota: {e}")
         return None
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
 def login_with_retry_and_link(api_key_id, task_id=None):
     """Compatibility wrapper for obtaining active account."""
@@ -1754,20 +1926,14 @@ def save_b64_to_temp_file(b64_data, suffix=".jpg"):
         f.write(data)
     return os.path.abspath(temp_path)
 
-# ==============================================================================
-# TASK WORKER PROCESSORS
-# ==============================================================================
-
 def process_image_task(task_id, params, api_key_id):
-    """Processes an image generation task in background thread."""
     temp_files = []
     try:
         db.update_task_status(task_id, 'running')
 
         prompt = params.get('prompt', '')
-        model_req = params.get('model', 'NANO_BANANA')
-        # Map frontend model ID to backend model key
-        model = IMAGE_MODEL_MAPPING.get(model_req, model_req)
+        raw_model = params.get('model', 'NANO_BANANA')
+        model = IMAGE_MODEL_MAPPING.get(raw_model, raw_model)
         aspect_ratio = params.get('size', '1:1')
         resolution = params.get('resolution', '1K')
         batch_size = int(params.get('batch_size', 1))
@@ -1787,7 +1953,9 @@ def process_image_task(task_id, params, api_key_id):
             db.add_task_log(task_id, "400")
             return
 
-        feature_id = "TextToImage"
+        is_style_ref = model_data.get("effect_type") == "TtiStyleRef"
+        feature_id = "TtiStyleRef" if is_style_ref else "TextToImage"
+
         max_account_retries = 3
         last_error = None
         result = None
@@ -1906,23 +2074,23 @@ def process_image_task(task_id, params, api_key_id):
                     pass
 
 def process_video_task(task_id, params, api_key_id):
-    """Processes a video generation task in background thread."""
     temp_files = []
     try:
         db.update_task_status(task_id, 'running')
 
         prompt = params.get('prompt', '')
-        model_req = params.get('model', 'VEO_3_1')
-        # Map frontend model ID to backend model key
-        model = VIDEO_MODEL_MAPPING.get(model_req, model_req)
+        raw_model = params.get('model', 'VEO_3_1')
+        model = VIDEO_MODEL_MAPPING.get(raw_model, raw_model)
         aspect_ratio = params.get('size', '16:9')
         resolution = params.get('resolution', '1080p')
         duration = int(params.get('duration', 4))
-        sound = params.get('sound', 'none')
+        sound = params.get('sound', 'vendor')
 
         input_mode = "TextToVideo"
         source_image_path = None
         last_image_path = None
+        ref_images = []
+        ref_videos = []
         frame_mode = "single"
 
         # Handle start frame
@@ -1940,6 +2108,20 @@ def process_video_task(task_id, params, api_key_id):
             temp_end = save_b64_to_temp_file(end_frame_b64)
             temp_files.append(temp_end)
             last_image_path = temp_end
+
+        # Handle reference images / videos
+        images = params.get('reference_images', [])
+        videos = params.get('reference_videos', [])
+        if images or videos:
+            input_mode = "ReferenceToVideo"
+            for img_b64 in images:
+                temp_img = save_b64_to_temp_file(img_b64)
+                temp_files.append(temp_img)
+                ref_images.append(temp_img)
+            for vid_b64 in videos:
+                temp_vid = save_b64_to_temp_file(vid_b64, suffix=".mp4")
+                temp_files.append(temp_vid)
+                ref_videos.append(temp_vid)
 
         model_data = VIDEO_MODELS_CONFIG.get(model)
         if not model_data:
@@ -1989,6 +2171,8 @@ def process_video_task(task_id, params, api_key_id):
                     effect_mode=input_mode,
                     source_image_path=source_image_path,
                     last_image_path=last_image_path,
+                    ref_images=ref_images if ref_images else None,
+                    ref_videos=ref_videos if ref_videos else None,
                     frame_mode=frame_mode,
                     filename_prefix=f"task_{task_id}",
                     task_id=task_id
@@ -2080,13 +2264,14 @@ def process_music_task(task_id, params, api_key_id):
 def get_tts_voices(api_key_id):
     return [], "TTS not supported by this service"
 
-# ==============================================================================
-# PROXY & RECOVERY LOGIC
-# ==============================================================================
+
 
 def proxy_request(url, range_header=None):
-    """Local or HTTP Proxy implementation for serving media files."""
+    """Local or HTTP Proxy implementation for serving files."""
     import urllib.parse as urlparse
+    import json
+    import re
+    import base64
 
     # 1. Clean double proxy url prefix
     while True:
@@ -2100,6 +2285,7 @@ def proxy_request(url, range_header=None):
         break
 
     if not url.startswith("http://") and not url.startswith("https://"):
+        # Local file path
         if os.path.exists(url):
             file_size = os.path.getsize(url)
             def iter_file():
@@ -2119,14 +2305,15 @@ def proxy_request(url, range_header=None):
         else:
             return iter([]), 404, []
 
-    # 2. Private MyEdit S3 URL Handling
+    # 2. Check if this is a private MyEdit S3 URL
     is_myedit_s3 = "cl-aol-media" in url or "cyberlink" in url
     
     if is_myedit_s3:
         import hashlib
         parsed_url = urlparse.urlparse(url)
-        url_path = parsed_url.path
+        url_path = parsed_url.path  # e.g. /Vgen/results/Credit/59723825/thumbnail.jpg or /source/Tti/2zcmqgbdbdrks/input.1.jpg
         
+        # Create MD5 hash of the url_path to serve as a unique, safe filename
         url_path_hash = hashlib.md5(url_path.encode('utf-8')).hexdigest()
         ext = ".mp4" if url_path.lower().endswith(".mp4") else ".jpg"
         
@@ -2139,7 +2326,7 @@ def proxy_request(url, range_header=None):
         
         local_cache_path = os.path.join(cache_dir, f"{url_path_hash}{ext}")
 
-        # A. If cached locally, stream from disk
+        # A. If already cached locally, stream it directly from disk (supports seek/range!)
         if os.path.exists(local_cache_path):
             file_size = os.path.getsize(local_cache_path)
             mime_type = "video/mp4" if ext == ".mp4" else "image/jpeg"
@@ -2180,11 +2367,12 @@ def proxy_request(url, range_header=None):
 
             return iter_cached_file(), status_code, headers
 
-        # B. Lookup task in database to fetch decryption keys / base64
+        # B. If not cached, lookup task in database to fetch decryption keys / base64
         conn = db.get_connection()
         cursor = conn.cursor()
         task_row = None
         try:
+            # We look for url_path in result_url or reference_image_urls
             query_val = f"%{url_path}%"
             if db.DB_TYPE == 'postgresql':
                 cursor.execute('SELECT token FROM tasks WHERE result_url LIKE %s OR reference_image_urls LIKE %s', (query_val, query_val))
@@ -2210,7 +2398,7 @@ def proxy_request(url, range_header=None):
             except Exception:
                 task_data = {}
 
-            # Case B1: Requesting reference image/video from database
+            # Case B1: Requesting a reference image/video from the database
             if "source" in url_path or "input." in url_path:
                 filename = os.path.basename(url_path)
                 match = re.search(r'(?:input\.|source_)(\d+)', filename)
@@ -2259,6 +2447,7 @@ def proxy_request(url, range_header=None):
                         b64_data = b64_data.split(",")[1]
                     media_bytes = base64.b64decode(b64_data)
                     
+                    # Write decoded data to local cache
                     try:
                         with open(local_cache_path, "wb") as f:
                             f.write(media_bytes)
@@ -2278,7 +2467,7 @@ def proxy_request(url, range_header=None):
                 else:
                     return iter([]), 404, []
 
-            # Case B2: Requesting VGEN result video/image (requires decryption if keys are present)
+            # Case B2: Requesting a VGEN result video/image (requires decryption if keys are present)
             dec_aes_key = task_data.get("dec_aes_key")
             dec_enc_key = task_data.get("dec_enc_key")
             dec_enc_iv = task_data.get("dec_enc_iv")
@@ -2294,6 +2483,7 @@ def proxy_request(url, range_header=None):
 
                 if dec_aes_key and dec_enc_key and dec_enc_iv and dec_ts_ms:
                     try:
+                        # File is encrypted, decrypt it
                         aes_key = bytes.fromhex(dec_aes_key)
                         dec_enc_key = dec_enc_key.replace(" ", "+")
                         dec_enc_iv = dec_enc_iv.replace(" ", "+")
@@ -2303,11 +2493,13 @@ def proxy_request(url, range_header=None):
                         aesgcm = AESGCM(raw_key)
                         decrypted_bytes = aesgcm.decrypt(raw_iv, raw_bytes, None)
                     except Exception as dec_err:
-                        print(f"Decryption failed: {dec_err}")
+                        print(f"Decryption failed (might be unencrypted thumbnail/media): {dec_err}")
                         decrypted_bytes = raw_bytes
                 else:
+                    # File is not encrypted, use raw bytes directly
                     decrypted_bytes = raw_bytes
 
+                # Write to local cache
                 try:
                     with open(local_cache_path, "wb") as f:
                         f.write(decrypted_bytes)
@@ -2354,7 +2546,7 @@ def proxy_request(url, range_header=None):
 
         return iter([]), 404, []
 
-    # 3. Standard HTTP streaming proxy
+    # 3. Standard HTTP url streaming proxy (for other non-MyEdit URLs)
     fwd_headers = {
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
     }
@@ -2365,12 +2557,9 @@ def proxy_request(url, range_header=None):
     resp_headers = [(k, v) for k, v in r.headers.items() if k.lower() not in excluded]
     return r.iter_content(chunk_size=8192), r.status_code, resp_headers
 
-# ==============================================================================
-# RECOVERY LOGIC
-# ==============================================================================
+# --- Recovery Logic ---
 
 def resume_incomplete_tasks():
-    """Startup task recovery."""
     print("=" * 50)
     print("[STARTUP] Starting crash recovery for MyEdit service...")
     try:

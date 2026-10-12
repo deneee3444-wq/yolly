@@ -315,11 +315,101 @@ def deserialize_session_data(json_str):
     return session, data
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# BROWSER SCREENSHOT & MONITORING STATE
+# ══════════════════════════════════════════════════════════════════════════════
+BROWSER_STATE = {
+    "is_active": False,
+    "current_page": None,
+    "last_screenshot": None,
+    "last_screenshot_time": 0,
+    "status": "Boşta",
+}
+_browser_state_lock = threading.Lock()
+
+
+def get_browser_status():
+    with _browser_state_lock:
+        return {
+            "is_active": BROWSER_STATE.get("is_active", False),
+            "status": BROWSER_STATE.get("status", "Boşta"),
+            "has_screenshot": BROWSER_STATE.get("last_screenshot") is not None,
+            "last_screenshot_time": BROWSER_STATE.get("last_screenshot_time", 0)
+        }
+
+
+def get_browser_screenshot(force_fresh=False):
+    """
+    Returns (image_bytes, timestamp, status_str)
+    """
+    with _browser_state_lock:
+        page = BROWSER_STATE.get("current_page")
+
+    if page:
+        try:
+            ss = page.screenshot()
+            with _browser_state_lock:
+                BROWSER_STATE["last_screenshot"] = ss
+                BROWSER_STATE["last_screenshot_time"] = time.time()
+            return ss, BROWSER_STATE["last_screenshot_time"], "Aktif Oturum (Canlı)"
+        except Exception as e:
+            print(f"[-] Aktif oturumdan screenshot alma hatası: {e}")
+
+    if force_fresh or not BROWSER_STATE.get("last_screenshot"):
+        try:
+            proxy = os.environ.get("CLOAK_PROXY", "http://plasthjw-2:vh917rfhzcxi@p.webshare.io:80")
+            print("[*] Anlık tarayıcı ekran görüntüsü alınıyor (CloakBrowser)...")
+            with _browser_state_lock:
+                BROWSER_STATE["status"] = "Anlık tarayıcı başlatılıyor..."
+            b = launch(
+                headless=True,
+                proxy=proxy,
+                humanize=True,
+                stealth_args=True,
+                args=[
+                    "--disable-infobars",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--window-size=1280,800",
+                ]
+            )
+            try:
+                p = b.new_page()
+                with _browser_state_lock:
+                    BROWSER_STATE["status"] = "Sayfa yükleniyor..."
+                p.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
+                time.sleep(2.0)
+                ss = p.screenshot()
+                with _browser_state_lock:
+                    BROWSER_STATE["last_screenshot"] = ss
+                    BROWSER_STATE["last_screenshot_time"] = time.time()
+                    BROWSER_STATE["status"] = "Anlık görüntü alındı"
+                return ss, BROWSER_STATE["last_screenshot_time"], "Yeni Çekildi"
+            finally:
+                try:
+                    b.close()
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[-] Anlık ekran görüntüsü hatası: {e}")
+            with _browser_state_lock:
+                BROWSER_STATE["status"] = f"Hata: {e}"
+                if BROWSER_STATE.get("last_screenshot"):
+                    return BROWSER_STATE["last_screenshot"], BROWSER_STATE.get("last_screenshot_time", 0), f"Son kayıt ({e})"
+            return None, 0, f"Hata: {e}"
+
+    with _browser_state_lock:
+        return BROWSER_STATE.get("last_screenshot"), BROWSER_STATE.get("last_screenshot_time", 0), "Son Kaydedilen Görüntü"
+
+
 def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
     print("[*] Cloudflare Turnstile token alınıyor (yolly.ai - CloakBrowser)...")
     proxy = os.environ.get("CLOAK_PROXY", "http://plasthjw-2:vh917rfhzcxi@p.webshare.io:80")
     browser = None
     try:
+        with _browser_state_lock:
+            BROWSER_STATE["is_active"] = True
+            BROWSER_STATE["status"] = "CloakBrowser başlatılıyor..."
         browser = launch(
             headless=True,
             proxy=proxy,
@@ -332,10 +422,23 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
             ]
         )
         page = browser.new_page()
+        with _browser_state_lock:
+            BROWSER_STATE["current_page"] = page
+            BROWSER_STATE["status"] = "Giriş sayfası açılıyor..."
         page.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
+
+        try:
+            ss = page.screenshot()
+            with _browser_state_lock:
+                BROWSER_STATE["last_screenshot"] = ss
+                BROWSER_STATE["last_screenshot_time"] = time.time()
+        except Exception:
+            pass
 
         token = None
         start = time.time()
+        with _browser_state_lock:
+            BROWSER_STATE["status"] = "Turnstile çözülmesi bekleniyor..."
         while time.time() - start < timeout:
             for f in page.frames:
                 try:
@@ -356,17 +459,35 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
                         f.locator("body").click(timeout=1500)
                     except Exception:
                         pass
+
+            try:
+                ss = page.screenshot()
+                with _browser_state_lock:
+                    BROWSER_STATE["last_screenshot"] = ss
+                    BROWSER_STATE["last_screenshot_time"] = time.time()
+            except Exception:
+                pass
+
             time.sleep(1)
 
         if token:
             print(f"[+] Turnstile token başarıyla alındı: {token[:35]}...")
+            with _browser_state_lock:
+                BROWSER_STATE["status"] = "Turnstile token başarıyla alındı"
         else:
             print("[-] Turnstile token alınamadı (timeout)!")
+            with _browser_state_lock:
+                BROWSER_STATE["status"] = "Turnstile zaman aşımına uğradı"
         return token
     except Exception as e:
         print(f"[-] Turnstile hatası: {e}")
+        with _browser_state_lock:
+            BROWSER_STATE["status"] = f"Turnstile hatası: {e}"
         return None
     finally:
+        with _browser_state_lock:
+            BROWSER_STATE["current_page"] = None
+            BROWSER_STATE["is_active"] = False
         if browser:
             try:
                 browser.close()

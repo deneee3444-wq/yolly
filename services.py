@@ -320,7 +320,8 @@ def deserialize_session_data(json_str):
 # ══════════════════════════════════════════════════════════════════════════════
 BROWSER_STATE = {
     "is_active": False,
-    "current_page": None,
+    "is_capturing": False,
+    "screenshot_requested": False,
     "last_screenshot": None,
     "last_screenshot_time": 0,
     "status": "Boşta",
@@ -332,74 +333,81 @@ def get_browser_status():
     with _browser_state_lock:
         return {
             "is_active": BROWSER_STATE.get("is_active", False),
+            "is_capturing": BROWSER_STATE.get("is_capturing", False),
             "status": BROWSER_STATE.get("status", "Boşta"),
             "has_screenshot": BROWSER_STATE.get("last_screenshot") is not None,
             "last_screenshot_time": BROWSER_STATE.get("last_screenshot_time", 0)
         }
 
 
-def get_browser_screenshot(force_fresh=False):
-    """
-    Returns (image_bytes, timestamp, status_str)
-    """
+def _background_capture_task():
+    """Arka planda bağımsız thread'de çalışır, Flask sunucusunu asla kitlemez."""
     with _browser_state_lock:
-        page = BROWSER_STATE.get("current_page")
+        if BROWSER_STATE.get("is_capturing"):
+            return
+        BROWSER_STATE["is_capturing"] = True
+        BROWSER_STATE["status"] = "Tarayıcı başlatılıyor..."
 
-    if page:
-        try:
-            ss = page.screenshot()
-            with _browser_state_lock:
-                BROWSER_STATE["last_screenshot"] = ss
-                BROWSER_STATE["last_screenshot_time"] = time.time()
-            return ss, BROWSER_STATE["last_screenshot_time"], "Aktif Oturum (Canlı)"
-        except Exception as e:
-            print(f"[-] Aktif oturumdan screenshot alma hatası: {e}")
+    browser = None
+    try:
+        proxy = os.environ.get("CLOAK_PROXY", "http://plasthjw-2:vh917rfhzcxi@p.webshare.io:80")
+        print(f"[*] Arka plan SS: CloakBrowser başlatılıyor (Proxy: {proxy})...")
+        browser = launch(
+            headless=True,
+            proxy=proxy,
+            humanize=True,
+            stealth_args=True,
+            args=[
+                "--disable-infobars",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--window-size=1280,800",
+            ]
+        )
+        with _browser_state_lock:
+            BROWSER_STATE["status"] = "Sayfaya gidiliyor..."
+        page = browser.new_page()
+        page.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
+        time.sleep(2.0)
 
-    if force_fresh or not BROWSER_STATE.get("last_screenshot"):
-        try:
-            proxy = os.environ.get("CLOAK_PROXY", "http://plasthjw-2:vh917rfhzcxi@p.webshare.io:80")
-            print("[*] Anlık tarayıcı ekran görüntüsü alınıyor (CloakBrowser)...")
-            with _browser_state_lock:
-                BROWSER_STATE["status"] = "Anlık tarayıcı başlatılıyor..."
-            b = launch(
-                headless=True,
-                proxy=proxy,
-                humanize=True,
-                stealth_args=True,
-                args=[
-                    "--disable-infobars",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--window-size=1280,800",
-                ]
-            )
+        with _browser_state_lock:
+            BROWSER_STATE["status"] = "Ekran görüntüsü alınıyor..."
+        ss = page.screenshot()
+        with _browser_state_lock:
+            BROWSER_STATE["last_screenshot"] = ss
+            BROWSER_STATE["last_screenshot_time"] = time.time()
+            BROWSER_STATE["status"] = "Ekran görüntüsü hazır"
+        print("[+] Arka plan SS başarıyla alındı.")
+    except Exception as e:
+        print(f"[-] Arka plan SS hatası: {e}")
+        with _browser_state_lock:
+            BROWSER_STATE["status"] = f"Hata: {e}"
+    finally:
+        with _browser_state_lock:
+            BROWSER_STATE["is_capturing"] = False
+        if browser:
             try:
-                p = b.new_page()
-                with _browser_state_lock:
-                    BROWSER_STATE["status"] = "Sayfa yükleniyor..."
-                p.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
-                time.sleep(2.0)
-                ss = p.screenshot()
-                with _browser_state_lock:
-                    BROWSER_STATE["last_screenshot"] = ss
-                    BROWSER_STATE["last_screenshot_time"] = time.time()
-                    BROWSER_STATE["status"] = "Anlık görüntü alındı"
-                return ss, BROWSER_STATE["last_screenshot_time"], "Yeni Çekildi"
-            finally:
-                try:
-                    b.close()
-                except Exception:
-                    pass
-        except Exception as e:
-            print(f"[-] Anlık ekran görüntüsü hatası: {e}")
-            with _browser_state_lock:
-                BROWSER_STATE["status"] = f"Hata: {e}"
-                if BROWSER_STATE.get("last_screenshot"):
-                    return BROWSER_STATE["last_screenshot"], BROWSER_STATE.get("last_screenshot_time", 0), f"Son kayıt ({e})"
-            return None, 0, f"Hata: {e}"
+                browser.close()
+            except Exception:
+                pass
 
+
+def trigger_browser_capture():
+    """
+    Ekran görüntüsü alma işlemini anında ve asenkron olarak tetikler.
+    Flask request thread'ini ASLA BLOKE ETMEZ.
+    """
     with _browser_state_lock:
-        return BROWSER_STATE.get("last_screenshot"), BROWSER_STATE.get("last_screenshot_time", 0), "Son Kaydedilen Görüntü"
+        if BROWSER_STATE.get("is_active"):
+            BROWSER_STATE["screenshot_requested"] = True
+            return "active_session", "Aktif Turnstile oturumundan görüntü alınıyor..."
+
+        if BROWSER_STATE.get("is_capturing"):
+            return "already_running", "Görüntü alma işlemi zaten devam ediyor..."
+
+    t = threading.Thread(target=_background_capture_task, daemon=True)
+    t.start()
+    return "started", "Arka planda tarayıcı başlatıldı..."
 
 
 def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
@@ -409,6 +417,7 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
     try:
         with _browser_state_lock:
             BROWSER_STATE["is_active"] = True
+            BROWSER_STATE["screenshot_requested"] = False
             BROWSER_STATE["status"] = "CloakBrowser başlatılıyor..."
         browser = launch(
             headless=True,
@@ -423,7 +432,6 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
         )
         page = browser.new_page()
         with _browser_state_lock:
-            BROWSER_STATE["current_page"] = page
             BROWSER_STATE["status"] = "Giriş sayfası açılıyor..."
         page.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
 
@@ -437,6 +445,7 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
 
         token = None
         start = time.time()
+        last_ss_time = time.time()
         with _browser_state_lock:
             BROWSER_STATE["status"] = "Turnstile çözülmesi bekleniyor..."
         while time.time() - start < timeout:
@@ -460,13 +469,22 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
                     except Exception:
                         pass
 
-            try:
-                ss = page.screenshot()
-                with _browser_state_lock:
-                    BROWSER_STATE["last_screenshot"] = ss
-                    BROWSER_STATE["last_screenshot_time"] = time.time()
-            except Exception:
-                pass
+            # Eğer kullanıcı web arayüzünden SS istediyse veya 3 saniyede bir güncelle
+            req_ss = False
+            with _browser_state_lock:
+                if BROWSER_STATE.get("screenshot_requested"):
+                    req_ss = True
+                    BROWSER_STATE["screenshot_requested"] = False
+
+            if req_ss or (time.time() - last_ss_time > 3):
+                try:
+                    ss = page.screenshot()
+                    with _browser_state_lock:
+                        BROWSER_STATE["last_screenshot"] = ss
+                        BROWSER_STATE["last_screenshot_time"] = time.time()
+                    last_ss_time = time.time()
+                except Exception:
+                    pass
 
             time.sleep(1)
 
@@ -483,10 +501,8 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
         print(f"[-] Turnstile hatası: {e}")
         with _browser_state_lock:
             BROWSER_STATE["status"] = f"Turnstile hatası: {e}"
-        return None
     finally:
         with _browser_state_lock:
-            BROWSER_STATE["current_page"] = None
             BROWSER_STATE["is_active"] = False
         if browser:
             try:

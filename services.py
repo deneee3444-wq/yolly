@@ -383,8 +383,15 @@ def login_yolly(email, password=None):
     """
     session = make_yolly_session()
 
-    # 1) Find proxy for send-code
     print(f"[*] Login başlatılıyor: {email}")
+
+    # 1) Turnstile token al (İlk olarak Turnstile token alınıyor - 5 dk timeout)
+    turnstile_token = get_yolly_turnstile_token(timeout=300)
+    if not turnstile_token:
+        print(f"[-] Turnstile token alınamadı ({email})")
+        return None, None
+
+    # 2) Find proxy for send-code (Turnstile alındıktan sonra bulunuyor)
     working_proxy = find_working_proxy(max_workers=30)
     send_code_proxies = None
     if working_proxy:
@@ -392,12 +399,6 @@ def login_yolly(email, password=None):
         send_code_proxies = {"http": working_proxy, "https": working_proxy}
     else:
         print("[-] Proxy bulunamadı, send-code proxysiz gidecek.")
-
-    # 1.5) Turnstile token al
-    turnstile_token = get_yolly_turnstile_token()
-    if not turnstile_token:
-        print(f"[-] Turnstile token alınamadı ({email})")
-        return None, None
 
     # 2) send-code — WITH PROXY
     try:
@@ -716,28 +717,28 @@ def create_and_login_new_account(max_attempts=30):
 
             print(f"[*] On-the-fly hesap oluşturuluyor: {email}")
 
-            # 1) send-code (with proxy)
-            sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
-            if not sc_proxy:
-                print("[-] Çalışan proxy bulunamadı (send-code)!")
-                continue
-
             send_code_url = "https://www.yolly.ai/api/auth/send-code"
-            proxies_dict = {"http": sc_proxy, "https": sc_proxy}
-
-            # Turnstile token al
-            turnstile_token = get_yolly_turnstile_token()
-            if not turnstile_token:
-                print("[-] Turnstile token alınamadı (send-code)!")
-                continue
+            turnstile_token = None
+            sc_proxy = None
+            proxies_dict = None
 
             send_ok = False
             for attempt in range(3):
                 try:
+                    # 1) Önce Turnstile token al (5 dk bekleme süresi)
                     if not turnstile_token:
-                        turnstile_token = get_yolly_turnstile_token()
+                        turnstile_token = get_yolly_turnstile_token(timeout=300)
                         if not turnstile_token:
+                            print("[-] Turnstile token alınamadı (send-code)!")
                             break
+
+                    # 2) Sonra proxy bul (istek öncesi taze olsun)
+                    if not sc_proxy:
+                        sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
+                        if not sc_proxy:
+                            print("[-] Çalışan proxy bulunamadı (send-code)!")
+                            break
+                        proxies_dict = {"http": sc_proxy, "https": sc_proxy}
 
                     res = session.post(
                         send_code_url,
@@ -755,10 +756,8 @@ def create_and_login_new_account(max_attempts=30):
                         try:
                             send_data = res.json()
                             if send_data.get("message") == "RATE_LIMIT_IP" or send_data.get("code") == -1:
-                                print("[-] Send-code rate limit yedi, yeni proxy aranıyor...")
-                                sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
-                                if sc_proxy:
-                                    proxies_dict = {"http": sc_proxy, "https": sc_proxy}
+                                print("[-] Send-code rate limit yedi, yeni token ve proxy aranacak...")
+                                sc_proxy = None
                                 turnstile_token = None
                                 continue
                         except Exception:
@@ -766,16 +765,12 @@ def create_and_login_new_account(max_attempts=30):
                         send_ok = True
                         break
                     else:
-                        print(f"[-] Send-code başarısız ({res.status_code}), proxy değiştiriliyor...")
-                        sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
-                        if sc_proxy:
-                            proxies_dict = {"http": sc_proxy, "https": sc_proxy}
+                        print(f"[-] Send-code başarısız ({res.status_code}), yeniden denenecek...")
+                        sc_proxy = None
                         turnstile_token = None
                 except Exception as e:
                     print(f"[-] Send-code bağlantı hatası: {e}")
-                    sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
-                    if sc_proxy:
-                        proxies_dict = {"http": sc_proxy, "https": sc_proxy}
+                    sc_proxy = None
                     turnstile_token = None
 
             if not send_ok:

@@ -459,25 +459,31 @@ def image_proxy():
 @app.route('/api/browser/screenshot', methods=['GET'])
 def browser_screenshot():
     services.ensure_cloak_monitor_running()
-    img_bytes = None
-    ss_time = 0
-    status_str = "Başlatılıyor..."
 
-    for _ in range(20):
-        with services._browser_state_lock:
-            img_bytes = services.BROWSER_STATE.get("last_screenshot")
-            ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
-            status_str = services.BROWSER_STATE.get("status", "Başlatılıyor...")
-        if img_bytes:
-            break
+    # app.py mimarisi: /screenshot çağrıldığında anlık taze görüntü talep et
+    with services._browser_state_lock:
+        services.BROWSER_STATE["screenshot_requested"] = True
+
+    # Arka plan tarayıcısının yeni kareyi alması için 1.5 saniyeye kadar bekle
+    for _ in range(15):
         time.sleep(0.1)
+        with services._browser_state_lock:
+            if not services.BROWSER_STATE.get("screenshot_requested") and services.BROWSER_STATE.get("last_screenshot"):
+                break
 
-    if img_bytes:
-        resp = Response(img_bytes, mimetype="image/png")
-        resp.headers['X-Screenshot-Time'] = str(ss_time)
-        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        return resp
-    return jsonify({"error": "Henüz ekran görüntüsü alınmadı", "status": status_str}), 404
+    with services._browser_state_lock:
+        img_bytes = services.BROWSER_STATE.get("last_screenshot")
+        ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
+        status_str = services.BROWSER_STATE.get("status", "Başlatılıyor...")
+
+    if not img_bytes:
+        img_bytes = services.generate_placeholder_image(f"Tarayıcı Hazırlanıyor: {status_str}")
+        ss_time = time.time()
+
+    resp = Response(img_bytes, mimetype="image/png")
+    resp.headers['X-Screenshot-Time'] = str(ss_time)
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return resp
 
 
 @app.route('/api/browser/capture', methods=['POST', 'GET'])

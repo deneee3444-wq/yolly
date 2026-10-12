@@ -3571,24 +3571,32 @@
                 // Senaryo A: Tarayıcı zaten açık (normal işlem veya test sürüyor) -> Anlık kareyi al
                 if (isAlreadyActive) {
                     if (loadingText) loadingText.textContent = '📸 Açık olan tarayıcının o anki görüntüsü alınıyor...';
-                    if (loadingSubtext) loadingSubtext.textContent = 'Aktif oturumun canlı görüntüsü yükleniyor...';
+                    if (loadingSubtext) loadingSubtext.textContent = 'Aktif oturumun canlı karesi çekiliyor...';
 
-                    setTimeout(async () => {
+                    let pollCount = 0;
+                    const quickPoll = setInterval(async () => {
+                        pollCount++;
                         try {
                             const statusRes = await fetch(`${API_BASE()}/api/browser/status?t=${Date.now()}`);
                             const statusData = await statusRes.json();
-                            if (statusData.has_screenshot) {
-                                renderScreenshotImage(statusData.last_screenshot_time);
+                            if (statusData.has_screenshot && (statusData.last_screenshot_time > initialSsTime || pollCount >= 8)) {
+                                clearInterval(quickPoll);
+                                renderScreenshotImage(statusData.last_screenshot_time || Date.now());
+                                if (badge) {
+                                    badge.style.background = 'var(--emerald-dim)';
+                                    badge.style.color = 'var(--emerald)';
+                                    const prefix = statusData.session_type === 'test' ? '🧪 Test' : '🟢 Normal İşlem';
+                                    badge.textContent = `${prefix}: ${statusData.status}`;
+                                }
+                                if (btn) btn.disabled = false;
                             }
-                            if (badge) {
-                                badge.style.background = 'var(--emerald-dim)';
-                                badge.style.color = 'var(--emerald)';
-                                const prefix = statusData.session_type === 'test' ? '🧪 Test' : '🟢 Normal İşlem';
-                                badge.textContent = `${prefix}: ${statusData.status}`;
+                        } catch (e) {
+                            if (pollCount >= 8) {
+                                clearInterval(quickPoll);
+                                if (btn) btn.disabled = false;
                             }
-                        } catch (e) {}
-                        if (btn) btn.disabled = false;
-                    }, 1500);
+                        }
+                    }, 400);
                     return;
                 }
 

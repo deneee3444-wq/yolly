@@ -2054,8 +2054,8 @@
                         </div>
                         <div id="browserScreenshotLoading" style="display:none; text-align:center; padding:50px 20px;">
                             <div class="loading" style="margin:0 auto 16px; width:36px; height:36px; border-width:3px;"></div>
-                            <div style="font-size:1rem; font-weight:600; color:var(--text);">📸 Ekran görüntüsü alınıyor...</div>
-                            <div style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">CloakBrowser sayfayı işliyor, lütfen bekleyin...</div>
+                            <div id="browserLoadingText" style="font-size:1rem; font-weight:600; color:var(--text);">📸 Ekran görüntüsü alınıyor...</div>
+                            <div id="browserLoadingSubtext" style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">CloakBrowser arka planda çalışıyor, lütfen bekleyin...</div>
                         </div>
                         <img id="browserScreenshotImg" src="" alt="Tarayıcı Ekran Görüntüsü" style="display:none; width:100%; height:auto; border-radius:var(--radius-sm); object-fit:contain;" />
                     </div>
@@ -3544,58 +3544,151 @@
             testImg.src = url;
         }
 
+        let browserPollInterval = null;
+
         async function takeBrowserScreenshot() {
             const placeholder = document.getElementById('browserScreenshotPlaceholder');
             const loading = document.getElementById('browserScreenshotLoading');
+            const loadingText = document.getElementById('browserLoadingText');
+            const loadingSubtext = document.getElementById('browserLoadingSubtext');
             const img = document.getElementById('browserScreenshotImg');
             const btn = document.getElementById('btnTakeScreenshot');
-            const timeEl = document.getElementById('browserSsTime');
             const badge = document.getElementById('browserStatusBadge');
 
             if (btn) btn.disabled = true;
             if (placeholder) placeholder.style.display = 'none';
             if (img) img.style.display = 'none';
             if (loading) loading.style.display = 'block';
+            if (loadingText) loadingText.textContent = '📸 Tarayıcı başlatılıyor...';
+            if (loadingSubtext) loadingSubtext.textContent = 'İşlem arka planda yürütülüyor, sayfa donmaz.';
 
-            const url = `${API_BASE()}/screenshot?force=1&t=${Date.now()}`;
+            try {
+                // 1. Arka plan yakalamasını tetikle (anında yanıt döner, sunucuyu kitlemez)
+                const res = await fetch(`${API_BASE()}/api/browser/capture`, { method: 'POST' });
+                const data = await res.json();
+
+                const initialSsTime = (data.browser_status && data.browser_status.last_screenshot_time) || 0;
+                const startTime = Date.now();
+
+                if (browserPollInterval) clearInterval(browserPollInterval);
+
+                // 2. Arka plan durumunu sorgula (her 800ms)
+                browserPollInterval = setInterval(async () => {
+                    try {
+                        const statusRes = await fetch(`${API_BASE()}/api/browser/status?t=${Date.now()}`);
+                        if (!statusRes.ok) return;
+                        const statusData = await statusRes.json();
+
+                        if (badge) {
+                            if (statusData.is_active) {
+                                badge.style.background = 'var(--emerald-dim)';
+                                badge.style.color = 'var(--emerald)';
+                                badge.textContent = `🟢 Turnstile Aktif: ${statusData.status}`;
+                            } else if (statusData.is_capturing) {
+                                badge.style.background = 'var(--amber-dim)';
+                                badge.style.color = 'var(--amber)';
+                                badge.textContent = `⏳ ${statusData.status}`;
+                            } else {
+                                badge.style.background = 'var(--violet-dim)';
+                                badge.style.color = 'var(--violet)';
+                                badge.textContent = `⚪ ${statusData.status || 'Boşta'}`;
+                            }
+                        }
+
+                        if (loadingText && statusData.status) {
+                            loadingText.textContent = `📸 ${statusData.status}`;
+                        }
+
+                        // Yeni ekran görüntüsü alındı mı?
+                        const hasNewSs = statusData.last_screenshot_time > initialSsTime;
+                        const captureFinished = !statusData.is_capturing && !statusData.is_active;
+
+                        if (hasNewSs || (captureFinished && (Date.now() - startTime > 2500))) {
+                            clearInterval(browserPollInterval);
+                            browserPollInterval = null;
+
+                            if (statusData.has_screenshot) {
+                                renderScreenshotImage(statusData.last_screenshot_time);
+                            } else {
+                                showScreenshotError('Ekran görüntüsü kaydedilemedi.');
+                            }
+                            if (btn) btn.disabled = false;
+                        }
+
+                        // 35 saniye zaman aşımı kontrolü
+                        if (Date.now() - startTime > 35000) {
+                            clearInterval(browserPollInterval);
+                            browserPollInterval = null;
+                            if (statusData.has_screenshot) {
+                                renderScreenshotImage(statusData.last_screenshot_time);
+                            } else {
+                                showScreenshotError('Zaman aşımı: Tarayıcı 35 saniye içinde yanıt vermedi.');
+                            }
+                            if (btn) btn.disabled = false;
+                        }
+                    } catch (e) {
+                        console.error('Browser status poll hatası:', e);
+                    }
+                }, 800);
+
+            } catch (err) {
+                console.error(err);
+                showScreenshotError('Sunucuya bağlanılamadı: ' + err.message);
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        function renderScreenshotImage(ts) {
+            const loading = document.getElementById('browserScreenshotLoading');
+            const placeholder = document.getElementById('browserScreenshotPlaceholder');
+            const img = document.getElementById('browserScreenshotImg');
+            const timeEl = document.getElementById('browserSsTime');
+            const badge = document.getElementById('browserStatusBadge');
+
+            const url = `${API_BASE()}/screenshot?t=${ts || Date.now()}`;
+            currentScreenshotUrl = url;
+
             const testImg = new Image();
-
             testImg.onload = () => {
-                currentScreenshotUrl = url;
                 img.src = url;
                 img.style.display = 'block';
                 if (loading) loading.style.display = 'none';
-                if (btn) btn.disabled = false;
+                if (placeholder) placeholder.style.display = 'none';
                 const now = new Date();
                 if (timeEl) timeEl.textContent = `Çekildi: ${now.toLocaleTimeString()}`;
                 if (badge) {
                     badge.style.background = 'var(--emerald-dim)';
                     badge.style.color = 'var(--emerald)';
-                    badge.textContent = '✅ Görüntü Alındı';
+                    badge.textContent = '✅ Görüntü Güncellendi';
                 }
             };
-
             testImg.onerror = () => {
-                if (loading) loading.style.display = 'none';
-                if (placeholder) {
-                    placeholder.style.display = 'block';
-                    placeholder.innerHTML = `
-                        <div style="font-size:3rem; margin-bottom:12px; color:var(--rose);">❌</div>
-                        <div style="font-size:1rem; font-weight:600; color:var(--rose); margin-bottom:6px;">Ekran Görüntüsü Alınamadı</div>
-                        <div style="font-size:0.8rem; color:var(--text-muted); max-width:400px;">
-                            CloakBrowser başlatılamadı veya zaman aşımına uğradı. Sunucu konsolunu kontrol edin ve tekrar deneyin.
-                        </div>
-                    `;
-                }
-                if (btn) btn.disabled = false;
-                if (badge) {
-                    badge.style.background = 'var(--rose-dim)';
-                    badge.style.color = 'var(--rose)';
-                    badge.textContent = '❌ Hata';
-                }
+                showScreenshotError('Görüntü yüklenirken hata oluştu.');
             };
-
             testImg.src = url;
+        }
+
+        function showScreenshotError(msg) {
+            const loading = document.getElementById('browserScreenshotLoading');
+            const placeholder = document.getElementById('browserScreenshotPlaceholder');
+            const badge = document.getElementById('browserStatusBadge');
+
+            if (loading) loading.style.display = 'none';
+            if (placeholder) {
+                placeholder.style.display = 'block';
+                placeholder.innerHTML = `
+                    <div style="font-size:3rem; margin-bottom:12px; color:var(--rose);">❌</div>
+                    <div style="font-size:1rem; font-weight:600; color:var(--rose); margin-bottom:6px;">Ekran Görüntüsü Alınamadı</div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); max-width:400px;">
+                        ${msg || 'Tarayıcı başlatılamadı veya zaman aşımına uğradı.'}
+                    </div>
+                `;
+            }
+            if (badge) {
+                badge.style.background = 'var(--rose-dim)';
+                badge.style.color = 'var(--rose)';
+                badge.textContent = '❌ Hata';
+            }
         }
 
         function openScreenshotInNewTab() {

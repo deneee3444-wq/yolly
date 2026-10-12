@@ -1605,12 +1605,12 @@
                 <div class="card">
                     <!-- Main Tabs -->
                     <div class="tab-nav">
-                        <button id="btn-tab-t2i" class="tab-btn active" onclick="switchTab('tab-t2i')"><span class="tab-icon">🖼️</span> Text to Image</button>
-                        <button id="btn-tab-i2i" class="tab-btn" onclick="switchTab('tab-i2i')"><span class="tab-icon">🔄</span> Image to Image</button>
-                        <button id="btn-tab-t2v" class="tab-btn" onclick="switchTab('tab-t2v')"><span class="tab-icon">🎬</span> Text to Video</button>
-                        <button id="btn-tab-i2v" class="tab-btn" onclick="switchTab('tab-i2v')"><span class="tab-icon">🎞️</span> Image to Video</button>
-                        <button id="btn-tab-tts" class="tab-btn" onclick="switchTab('tab-tts')" style="display: none;"><span class="tab-icon">🔊</span> Text to Speech</button>
-                        <button id="btn-tab-music" class="tab-btn" onclick="switchTab('tab-music')" style="display: none;"><span class="tab-icon">🎵</span> Music</button>
+                        <button class="tab-btn active" onclick="switchTab('tab-t2i')"><span class="tab-icon">🖼️</span> Text to Image</button>
+                        <button class="tab-btn" onclick="switchTab('tab-i2i')"><span class="tab-icon">🔄</span> Image to Image</button>
+                        <button class="tab-btn" onclick="switchTab('tab-t2v')"><span class="tab-icon">🎬</span> Text to Video</button>
+                        <button class="tab-btn" onclick="switchTab('tab-i2v')"><span class="tab-icon">🎞️</span> Image to Video</button>
+                        <button class="tab-btn" onclick="switchTab('tab-tts')"><span class="tab-icon">🔊</span> Text to Speech</button>
+                        <button class="tab-btn" onclick="switchTab('tab-music')"><span class="tab-icon">🎵</span> Music</button>
                     </div>
 
                     <!-- Text to Image -->
@@ -1626,7 +1626,10 @@
                             <div class="form-group">
                                 <label for="imageModel">model</label>
                                 <select id="imageModel" onchange="onImageModelChange()">
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="NANO_BANANA_PRO" selected>NANO_BANANA_PRO</option>
+                                    <option value="NANO_BANANA">NANO_BANANA</option>
+                                    <option value="NANO_BANANA_2">NANO_BANANA_2</option>
+                                    <option value="GPT_IMAGE_2">GPT_IMAGE_2</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1651,7 +1654,7 @@
                                 <option value="4K">4K</option>
                             </select>
                         </div>
-                        <small id="imageModelHelp" style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span></small>
+                        <small style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span>NANO_BANANA_PRO, NANO_BANANA_2 ve GPT_IMAGE_2 modelleri Resolution seçeneği sunar.</small>
                         <button onclick="generateImage()">✨ Görsel Oluştur</button>
                         <div id="imageResponse" class="response-box" style="display:none;"></div>
                         <div id="imageReadable" style="display:none; margin-top:1.25rem; width:100%; max-width:100%; overflow:hidden;"></div>
@@ -1670,7 +1673,10 @@
                             <div class="form-group">
                                 <label for="i2iModel">model</label>
                                 <select id="i2iModel" onchange="onI2iModelChange()">
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="NANO_BANANA_PRO" selected>NANO_BANANA_PRO</option>
+                                    <option value="NANO_BANANA">NANO_BANANA</option>
+                                    <option value="NANO_BANANA_2">NANO_BANANA_2</option>
+                                    <option value="GPT_IMAGE_2">GPT_IMAGE_2</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1703,7 +1709,7 @@
                             </div>
                             
                         </div>
-                        <small id="i2iModelHelp" style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span></small>
+                        <small style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span>NANO_BANANA_PRO, NANO_BANANA_2 ve GPT_IMAGE_2 modelleri Resolution seçeneği sunar.</small>
                         <button onclick="generateImageToImage()">🔄 Görsel Dönüştür</button>
                         <div id="i2iResponse" class="response-box" style="display:none;"></div>
                         <div id="i2iReadable" style="display:none; margin-top:1.25rem; width:100%; max-width:100%; overflow:hidden;"></div>
@@ -1722,7 +1728,9 @@
                             <div class="form-group">
                                 <label for="t2vModel">model</label>
                                 <select id="t2vModel" onchange="onT2vModelChange()">
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="SORA_2" selected>SORA_2</option>
+                                    <option value="VEO_3">VEO_3</option>
+                                    <option value="SEEDANCE_2_0">SEEDANCE_2_0</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1748,7 +1756,7 @@
                                 </select>
                             </div>
                         </div>
-                        <small id="t2vModelHelp" style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span></small>
+                        <small style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span>SORA_2: 720p · 10 sn &nbsp;|&nbsp; VEO_3: 720p · 8 sn &nbsp;|&nbsp; SEEDANCE_2_0: 480p · 5 sn</small>
                         <button onclick="generateTextToVideo()">🎬 Video Oluştur</button>
                         <div id="t2vResponse" class="response-box" style="display:none;"></div>
                         <div id="t2vReadable" style="display:none; margin-top:1.25rem; width:100%; max-width:100%; overflow:hidden;"></div>
@@ -1767,7 +1775,11 @@
                             <div class="form-group">
                                 <label for="i2vModel">model</label>
                                 <select id="i2vModel" onchange="onI2vModelChange()">
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="SORA_2" selected>SORA_2</option>
+                                    <option value="VEO_3">VEO_3</option>
+                                    <option value="VIDU_Q3">VIDU_Q3</option>
+                                    <option value="SEEDANCE_2_0">SEEDANCE_2_0</option>
+                                    <option value="QUALITY_V2_5">QUALITY_V2_5</option>
                                 </select>
                             </div>
                             <div class="form-group" id="i2vSizeGroup">
@@ -1828,7 +1840,7 @@
                                 
                             </div>
                         </div>
-                        <small id="i2vModelHelp" style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span></small>
+                        <small style="color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.75rem; font-size: 0.75rem;"><span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span>SORA_2: 720p · 10 sn &nbsp;|&nbsp; VEO_3: 720p · 8 sn &nbsp;|&nbsp; SEEDANCE_2_0: 480p · 5 sn &nbsp;|&nbsp; VIDU_Q3: 720p/5sn · 512p/5-10sn &nbsp;|&nbsp; QUALITY_V2_5: 720p/5sn · 480p/5-10sn</small>
                         <button onclick="generateImageToVideo()">🎞️ Video Oluştur</button>
                         <div id="i2vResponse" class="response-box" style="display:none;"></div>
                         <div id="i2vReadable" style="display:none; margin-top:1.25rem; width:100%; max-width:100%; overflow:hidden;"></div>
@@ -1842,7 +1854,8 @@
                             <div class="form-group">
                                 <label for="ttsModel">model</label>
                                 <select id="ttsModel">
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="MINIMAX-TURBO" selected>MINIMAX-TURBO</option>
+                                    <option value="MINIMAX">MINIMAX</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -1912,7 +1925,7 @@
                             <div class="form-group">
                                 <label>model</label>
                                 <select id="musicModel" disabled>
-                                    <option value="" disabled selected>— Ayarları Kaydedin —</option>
+                                    <option value="SUNO" selected>SUNO</option>
                                 </select>
                             </div>
                             <div class="form-group">
@@ -2046,17 +2059,15 @@
         /* ══════════════════════════════════════
            LOCALSTORAGE — API SETTINGS
         ══════════════════════════════════════ */
-        async function saveApiSettings() {
+        function saveApiSettings() {
             const apiKey = document.getElementById('apiKey').value.trim();
             const apiUrl = document.getElementById('apiUrl').value.trim();
             
             if (apiKey) localStorage.setItem('creativelabs_api_key', apiKey);
             if (apiUrl) localStorage.setItem('creativelabs_api_url', apiUrl);
             
-            await fetchAndPopulateModels();
             alert('✅ Ayarlar kaydedildi!');
         }
-
 
         function clearApiSettings() {
             if (confirm('API ayarlarını silmek istediğinizden emin misiniz?')) {
@@ -2076,142 +2087,19 @@
             if (savedUrl) document.getElementById('apiUrl').value = savedUrl;
         }
 
-        window.addEventListener('DOMContentLoaded', async () => {
+        window.addEventListener('DOMContentLoaded', () => {
             loadApiSettings();
-            await fetchAndPopulateModels();
             updateCounter('imagePrompt', 'imagePromptCounter', 5000);
             updateCounter('t2vPrompt', 't2vPromptCounter', 2000);
             updateCounter('i2vPrompt', 'i2vPromptCounter', 2000);
             updateCounter('i2iPrompt', 'i2iPromptCounter', 5000);
+            onI2vModelChange();
+            onT2vModelChange();
         });
 
         const API_BASE = () => document.getElementById('apiUrl').value;
-        const proxied = (url) => url ? `${API_BASE()}/api/proxy?url=${encodeURIComponent(url)}` : url;
+        const proxied = (url) => url ? `${API_BASE()}/api/image-proxy?url=${encodeURIComponent(url)}` : url;
         const API_KEY = () => document.getElementById('apiKey').value;
-
-        let modelsData = null;
-
-        async function fetchAndPopulateModels() {
-            const apiKey = API_KEY();
-            const apiBase = API_BASE();
-            if (!apiKey || !apiBase) return;
-
-            try {
-                const { response, data } = await apiCall('/api/models', 'GET');
-                if (!response.ok) {
-                    console.error('Model fetch failed:', data);
-                    return;
-                }
-
-                modelsData = data;
-
-                // Toggle Tab Visibility based on availability of models
-                const t2iBtn = document.getElementById('btn-tab-t2i');
-                const i2iBtn = document.getElementById('btn-tab-i2i');
-                const t2vBtn = document.getElementById('btn-tab-t2v');
-                const i2vBtn = document.getElementById('btn-tab-i2v');
-                const ttsBtn = document.getElementById('btn-tab-tts');
-                const musicBtn = document.getElementById('btn-tab-music');
-
-                const imageAvailable = (modelsData.image || []).length > 0;
-                const videoAvailable = (modelsData.video || []).length > 0;
-                const ttsAvailable = (modelsData.tts || []).length > 0;
-                const musicAvailable = (modelsData.music || []).length > 0;
-
-                if (t2iBtn) t2iBtn.style.display = imageAvailable ? '' : 'none';
-                if (i2iBtn) i2iBtn.style.display = imageAvailable ? '' : 'none';
-                if (t2vBtn) t2vBtn.style.display = videoAvailable ? '' : 'none';
-                if (i2vBtn) i2vBtn.style.display = videoAvailable ? '' : 'none';
-                if (ttsBtn) ttsBtn.style.display = ttsAvailable ? '' : 'none';
-                if (musicBtn) musicBtn.style.display = musicAvailable ? '' : 'none';
-
-                // If currently active tab is hidden, switch to the first available tab
-                const activeTabBtn = document.querySelector('.tab-btn.active');
-                if (activeTabBtn && activeTabBtn.style.display === 'none') {
-                    const availableTabs = ['t2i', 'i2i', 't2v', 'i2v', 'tts', 'music'];
-                    for (const tab of availableTabs) {
-                        const btn = document.getElementById(`btn-tab-${tab}`);
-                        if (btn && btn.style.display !== 'none') {
-                            switchTab(`tab-${tab}`);
-                            break;
-                        }
-                    }
-                }
-
-                // Populate Image Models
-                const imageModels = modelsData.image || [];
-                const imgSelect = document.getElementById('imageModel');
-                const i2iSelect = document.getElementById('i2iModel');
-                
-                if (imgSelect) {
-                    const prevVal = imgSelect.value;
-                    imgSelect.innerHTML = imageModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (imageModels.some(m => m.id === prevVal)) {
-                        imgSelect.value = prevVal;
-                    }
-                    onImageModelChange();
-                }
-                if (i2iSelect) {
-                    const prevVal = i2iSelect.value;
-                    i2iSelect.innerHTML = imageModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (imageModels.some(m => m.id === prevVal)) {
-                        i2iSelect.value = prevVal;
-                    }
-                    onI2iModelChange();
-                }
-
-                // Populate Video Models
-                const videoModels = modelsData.video || [];
-                const t2vSelect = document.getElementById('t2vModel');
-                const i2vSelect = document.getElementById('i2vModel');
-
-                if (t2vSelect) {
-                    const prevVal = t2vSelect.value;
-                    t2vSelect.innerHTML = videoModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (videoModels.some(m => m.id === prevVal)) {
-                        t2vSelect.value = prevVal;
-                    }
-                    onT2vModelChange();
-                }
-                if (i2vSelect) {
-                    const prevVal = i2vSelect.value;
-                    i2vSelect.innerHTML = videoModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (videoModels.some(m => m.id === prevVal)) {
-                        i2vSelect.value = prevVal;
-                    }
-                    onI2vModelChange();
-                }
-
-                // Populate TTS Models
-                const ttsModels = modelsData.tts || [];
-                const ttsSelect = document.getElementById('ttsModel');
-                if (ttsSelect) {
-                    const prevVal = ttsSelect.value;
-                    ttsSelect.innerHTML = ttsModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (ttsModels.some(m => m.id === prevVal)) {
-                        ttsSelect.value = prevVal;
-                    }
-                }
-
-                // Populate Music Models
-                const musicModels = modelsData.music || [];
-                const musicSelect = document.getElementById('musicModel');
-                if (musicSelect) {
-                    const prevVal = musicSelect.value;
-                    musicSelect.innerHTML = musicModels.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-                    if (musicModels.some(m => m.id === prevVal)) {
-                        musicSelect.value = prevVal;
-                    }
-                    if (musicModels.length > 0) {
-                        musicSelect.removeAttribute('disabled');
-                    }
-                }
-
-            } catch (err) {
-                console.error('Error fetching models:', err);
-            }
-        }
-
         let autoRefreshInterval = null;
         let currentViewMode = 'all'; // 'all' veya 'single'
         
@@ -2411,11 +2299,10 @@
                 size: document.getElementById('imageSize').value
             };
 
-            const modelMeta = modelsData?.image?.find(m => m.id === body.model);
-            if (modelMeta && modelMeta.supported_resolutions && modelMeta.supported_resolutions.length > 0) {
+            // NANO_PRO / NANO_2 / GPT_IMAGE_2 için resolution ekle
+            if (body.model === 'NANO_BANANA_PRO' || body.model === 'NANO_BANANA_2' || body.model === 'GPT_IMAGE_2') {
                 body.resolution = document.getElementById('imageResolution').value;
             }
-
 
             // Image-to-Image için base64 dönüşümü
             const fileInput = document.getElementById('imageFile');
@@ -2441,44 +2328,42 @@
         }
 
         function onI2vModelChange() {
-            const modelId = document.getElementById('i2vModel').value;
-            const model = modelsData?.video?.find(m => m.id === modelId);
-            if (!model) return;
-
-            const helpEl = document.getElementById('i2vModelHelp');
-            if (helpEl && model.description) {
-                helpEl.innerHTML = `<span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span> ${model.description}`;
-            }
-
-
-            const isVeo = model.id === 'VEO_3';
-            const isKling = model.id === 'SEEDANCE_2_0';
+            const model = document.getElementById('i2vModel').value;
+            const isVeo = model === 'VEO_3';
+            const isViduQ3 = model === 'VIDU_Q3';
+            const isKling = model === 'SEEDANCE_2_0';
+            const isQuality = model === 'QUALITY_V2_5';
 
             // Size selector
             const sizeSelect = document.getElementById('i2vSize');
-            if (sizeSelect && model.supported_sizes) {
-                sizeSelect.innerHTML = model.supported_sizes.map(s => `<option value="${s}">${s}</option>`).join('');
-                sizeSelect.disabled = model.supported_sizes.length === 1 && model.supported_sizes[0] === 'AUTO';
-                sizeSelect.value = model.default_size || model.supported_sizes[0];
+            if (isViduQ3 || isQuality) {
+                sizeSelect.innerHTML = '<option value="AUTO">AUTO</option>';
+                sizeSelect.disabled = true;
+            } else if (isKling) {
+                sizeSelect.innerHTML = '<option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option>';
+                sizeSelect.disabled = false;
+                sizeSelect.value = '16:9';
+            } else {
+                sizeSelect.innerHTML = '<option value="16:9">16:9</option><option value="9:16">9:16</option>';
+                sizeSelect.disabled = false;
+                sizeSelect.value = '16:9';
             }
 
-            // Sub-tab nav: VEO_3 ve SEEDANCE_2_0'de göster (model supports character references)
-            const supportsRef = model.supports_reference_images;
-            document.getElementById('i2vSubTabNav').style.display = supportsRef ? 'flex' : 'none';
+            // Sub-tab nav: VEO_3 ve SEEDANCE_2_0'de göster
+            document.getElementById('i2vSubTabNav').style.display = (isVeo || isKling) ? 'flex' : 'none';
 
             // End Frame: VEO_3 ve SEEDANCE_2_0'de göster
-            const supportsEndFrame = model.supports_end_frame;
-            document.getElementById('i2vEndFrameGroup').style.display = supportsEndFrame ? 'block' : 'none';
+            document.getElementById('i2vEndFrameGroup').style.display = (isVeo || isKling) ? 'block' : 'none';
 
             // End Frame label
             const endFrameLabel = document.getElementById('i2vEndFrameLabel');
-            if (endFrameLabel) endFrameLabel.textContent = supportsEndFrame ? 'End Frame' : 'End Frame *';
+            if (endFrameLabel) endFrameLabel.textContent = (isVeo || isKling) ? 'End Frame' : 'End Frame *';
 
             // Reference Images label
             const refImagesLabel = document.getElementById('i2vRefImagesFormLabel');
-            if (refImagesLabel) refImagesLabel.textContent = supportsRef ? 'REFERENCE IMAGES *' : 'REFERENCE IMAGES';
+            if (refImagesLabel) refImagesLabel.textContent = (isVeo || isKling) ? 'REFERENCE IMAGES *' : 'REFERENCE IMAGES';
 
-            // Reference Images paneli: reset
+            // Reference Images paneli: VEO_3 ve SEEDANCE_2_0'de erişilebilir
             document.getElementById('subtab-refimages').style.display = 'none';
             document.getElementById('subtab-startend').style.display = 'block';
 
@@ -2492,64 +2377,62 @@
             const durSelect = document.getElementById('i2vDurationSelect');
             const durInput  = document.getElementById('i2vDuration');
 
-            // Dynamic resolutions
-            if (resSelect) {
-                if (model.supported_resolutions) {
-                    resSelect.innerHTML = model.supported_resolutions.map(r => `<option value="${r}">${r}</option>`).join('');
-                    resSelect.disabled = model.supported_resolutions.length <= 1;
-                    resSelect.value = model.default_resolution || model.supported_resolutions[0];
-                } else if (model.resolution) {
-                    resSelect.innerHTML = `<option value="${model.resolution}">${model.resolution}</option>`;
-                    resSelect.disabled = true;
-                    resSelect.value = model.resolution;
-                }
+            if (isViduQ3) {
+                resSelect.innerHTML = '<option value="720p">720p</option><option value="512p">512p</option>';
+                resSelect.disabled = false;
+                durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                durSelect.disabled = true;
+                durInput.value = '5';
+            } else if (isVeo) {
+                resSelect.innerHTML = '<option value="720p">720p</option>';
+                resSelect.disabled = true;
+                durSelect.innerHTML = '<option value="8">8 saniye</option>';
+                durSelect.disabled = true;
+                durInput.value = '8';
+            } else if (isKling) {
+                resSelect.innerHTML = '<option value="480p">480p</option>';
+                resSelect.disabled = true;
+                durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                durSelect.disabled = true;
+                durInput.value = '5';
+            } else if (isQuality) {
+                // QUALITY_V2_5: kullanıcı resolution seçer, duration otomatik türetilir
+                resSelect.innerHTML = '<option value="720p">720p</option><option value="480p">480p</option>';
+                resSelect.disabled = false;
+                durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                durSelect.disabled = true;
+                durInput.value = '5';
+            } else {
+                resSelect.innerHTML = '<option value="720p">720p</option>';
+                resSelect.disabled = true;
+                durSelect.innerHTML = '<option value="10">10 saniye</option>';
+                durSelect.disabled = true;
+                durInput.value = '10';
             }
-
-            // Dynamic durations
-            if (durSelect && durInput) {
-                if (model.supported_durations) {
-                    durSelect.innerHTML = model.supported_durations.map(d => `<option value="${d}">${d} saniye</option>`).join('');
-                    durSelect.disabled = model.supported_durations.length <= 1;
-                    durSelect.value = model.default_duration || model.supported_durations[0];
-                    durInput.value = durSelect.value;
-                } else if (model.duration) {
-                    durSelect.innerHTML = `<option value="${model.duration}">${model.duration} saniye</option>`;
-                    durSelect.disabled = true;
-                    durInput.value = model.duration;
-                }
-            }
-
-            // Trigger resolution change handler to handle constraints
-            onI2vResolutionChange();
         }
 
         function onI2vResolutionChange() {
-            const modelId = document.getElementById('i2vModel').value;
-            const model = modelsData?.video?.find(m => m.id === modelId);
-            if (!model) return;
-
+            const model = document.getElementById('i2vModel').value;
             const res = document.getElementById('i2vResolution').value;
             const durSelect = document.getElementById('i2vDurationSelect');
             const durInput = document.getElementById('i2vDuration');
-
-            if (!durSelect || !durInput) return;
-
-            // Handle constraints
-            if (model.constraints) {
-                const constraint = model.constraints.find(c => c.if && c.if.resolution === res);
-                if (constraint && constraint.then && constraint.then.duration) {
-                    durSelect.innerHTML = constraint.then.duration.map(d => `<option value="${d}">${d} saniye</option>`).join('');
-                    durSelect.disabled = constraint.then.duration.length <= 1;
-                    durSelect.value = constraint.then.duration[0];
-                    durInput.value = durSelect.value;
-                    return;
+            if (model === 'VIDU_Q3') {
+                if (res === '512p') {
+                    durSelect.innerHTML = '<option value="5">5 saniye</option><option value="10">10 saniye</option>';
+                    durSelect.disabled = false;
+                } else {
+                    durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                    durSelect.disabled = true;
                 }
-            }
-
-            if (model.supported_durations) {
-                durSelect.innerHTML = model.supported_durations.map(d => `<option value="${d}">${d} saniye</option>`).join('');
-                durSelect.disabled = model.supported_durations.length <= 1;
-                durSelect.value = model.default_duration || model.supported_durations[0];
+                durInput.value = durSelect.value;
+            } else if (model === 'QUALITY_V2_5') {
+                if (res === '480p') {
+                    durSelect.innerHTML = '<option value="5">5 saniye</option><option value="10">10 saniye</option>';
+                    durSelect.disabled = false;
+                } else {
+                    durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                    durSelect.disabled = true;
+                }
                 durInput.value = durSelect.value;
             }
         }
@@ -2559,55 +2442,25 @@
         }
 
         function onT2vModelChange() {
-            const modelId = document.getElementById('t2vModel').value;
-            const model = modelsData?.video?.find(m => m.id === modelId);
-            if (!model) return;
-
-            const helpEl = document.getElementById('t2vModelHelp');
-            if (helpEl && model.description) {
-                helpEl.innerHTML = `<span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span> ${model.description}`;
-            }
-
+            const model = document.getElementById('t2vModel').value;
             const durSelect = document.getElementById('t2vDurationDisplay');
             const resSelect = document.getElementById('t2vResolutionDisplay');
             const sizeSelect = document.getElementById('t2vSize');
 
-            if (durSelect) {
-                if (model.supported_durations) {
-                    durSelect.innerHTML = model.supported_durations.map(d => `<option value="${d}">${d} saniye</option>`).join('');
-                    durSelect.disabled = model.supported_durations.length <= 1;
-                    durSelect.value = model.default_duration || model.supported_durations[0];
-                } else if (model.duration) {
-                    durSelect.innerHTML = `<option value="${model.duration}">${model.duration} saniye</option>`;
-                    durSelect.disabled = true;
-                    durSelect.value = model.duration;
-                }
-            }
-
-            if (resSelect) {
-                if (model.supported_resolutions) {
-                    resSelect.innerHTML = model.supported_resolutions.map(r => `<option value="${r}">${r}</option>`).join('');
-                    resSelect.disabled = model.supported_resolutions.length <= 1;
-                    resSelect.value = model.default_resolution || model.supported_resolutions[0];
-                } else if (model.resolution) {
-                    resSelect.innerHTML = `<option value="${model.resolution}">${model.resolution}</option>`;
-                    resSelect.disabled = true;
-                    resSelect.value = model.resolution;
-                }
-            }
-
-            if (sizeSelect && model.supported_sizes) {
-                const prevVal = sizeSelect.value;
-                sizeSelect.innerHTML = model.supported_sizes.map(s => `<option value="${s}">${s}</option>`).join('');
-                if (model.supported_sizes.includes(prevVal)) {
-                    sizeSelect.value = prevVal;
-                } else {
-                    sizeSelect.value = model.default_size || model.supported_sizes[0];
-                }
+            if (model === 'VEO_3') {
+                durSelect.innerHTML = '<option value="8">8 saniye</option>';
+                resSelect.innerHTML = '<option value="720p">720p</option>';
+                sizeSelect.innerHTML = '<option value="16:9">16:9</option><option value="9:16">9:16</option>';
+            } else if (model === 'SEEDANCE_2_0') {
+                durSelect.innerHTML = '<option value="5">5 saniye</option>';
+                resSelect.innerHTML = '<option value="480p">480p</option>';
+                sizeSelect.innerHTML = '<option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option>';
+            } else {
+                durSelect.innerHTML = '<option value="10">10 saniye</option>';
+                resSelect.innerHTML = '<option value="720p">720p</option>';
+                sizeSelect.innerHTML = '<option value="16:9">16:9</option><option value="9:16">9:16</option>';
             }
         }
-
-
 
         function onI2iRefChange(input) {
             if (input.files && input.files.length > 5) {
@@ -2621,50 +2474,10 @@
         }
 
         function onI2iModelChange() {
-            const modelId = document.getElementById('i2iModel').value;
-            const model = modelsData?.image?.find(m => m.id === modelId);
-            if (!model) return;
-
-            const helpEl = document.getElementById('i2iModelHelp');
-            if (helpEl && model.description) {
-                helpEl.innerHTML = `<span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span> ${model.description}`;
-            }
-
-            const resGroup = document.getElementById('i2iResolutionGroup');
-            const hasResolution = model.supported_resolutions && model.supported_resolutions.length > 0;
-            if (resGroup) {
-                resGroup.style.display = hasResolution ? 'block' : 'none';
-                if (hasResolution) {
-                    const resSelect = document.getElementById('i2iResolution');
-                    const prevVal = resSelect.value;
-                    resSelect.innerHTML = model.supported_resolutions.map(r => `<option value="${r}">${r}</option>`).join('');
-                    if (model.supported_resolutions.includes(prevVal)) {
-                        resSelect.value = prevVal;
-                    } else if (model.default_resolution) {
-                        resSelect.value = model.default_resolution;
-                    }
-                }
-            }
-
-            const sizeSelect = document.getElementById('i2iSize');
-            if (sizeSelect && model.supported_sizes) {
-                const prevVal = sizeSelect.value;
-                sizeSelect.innerHTML = model.supported_sizes.map(s => `<option value="${s}">${s}</option>`).join('');
-                if (model.supported_sizes.includes(prevVal)) {
-                    sizeSelect.value = prevVal;
-                } else {
-                    sizeSelect.value = model.default_size || model.supported_sizes[0];
-                }
-            }
-
-            const promptInput = document.getElementById('i2iPrompt');
-            if (promptInput && model.max_prompt_length) {
-                promptInput.setAttribute('maxlength', model.max_prompt_length);
-                updateCounter('i2iPrompt', 'i2iPromptCounter', model.max_prompt_length);
-            }
+            const model = document.getElementById('i2iModel').value;
+            document.getElementById('i2iResolutionGroup').style.display =
+                (model === 'NANO_BANANA_PRO' || model === 'NANO_BANANA_2' || model === 'GPT_IMAGE_2') ? 'block' : 'none';
         }
-
-
 
         async function generateImageToImage() {
             const prompt = document.getElementById('i2iPrompt').value;
@@ -2682,11 +2495,9 @@
                 size: document.getElementById('i2iSize').value
             };
 
-            const modelMeta = modelsData?.image?.find(m => m.id === body.model);
-            if (modelMeta && modelMeta.supported_resolutions && modelMeta.supported_resolutions.length > 0) {
+            if (body.model === 'NANO_BANANA_PRO' || body.model === 'NANO_BANANA_2' || body.model === 'GPT_IMAGE_2') {
                 body.resolution = document.getElementById('i2iResolution').value;
             }
-
 
             if (refInput.files && refInput.files.length > 0) {
                 const images = [];
@@ -2706,50 +2517,10 @@
         }
 
         function onImageModelChange() {
-            const modelId = document.getElementById('imageModel').value;
-            const model = modelsData?.image?.find(m => m.id === modelId);
-            if (!model) return;
-
-            const helpEl = document.getElementById('imageModelHelp');
-            if (helpEl && model.description) {
-                helpEl.innerHTML = `<span style="font-size:0.75rem; flex-shrink:0;">ℹ️</span> ${model.description}`;
-            }
-
-            const resGroup = document.getElementById('imageResolutionGroup');
-            const hasResolution = model.supported_resolutions && model.supported_resolutions.length > 0;
-            if (resGroup) {
-                resGroup.style.display = hasResolution ? 'block' : 'none';
-                if (hasResolution) {
-                    const resSelect = document.getElementById('imageResolution');
-                    const prevVal = resSelect.value;
-                    resSelect.innerHTML = model.supported_resolutions.map(r => `<option value="${r}">${r}</option>`).join('');
-                    if (model.supported_resolutions.includes(prevVal)) {
-                        resSelect.value = prevVal;
-                    } else if (model.default_resolution) {
-                        resSelect.value = model.default_resolution;
-                    }
-                }
-            }
-
-            const sizeSelect = document.getElementById('imageSize');
-            if (sizeSelect && model.supported_sizes) {
-                const prevVal = sizeSelect.value;
-                sizeSelect.innerHTML = model.supported_sizes.map(s => `<option value="${s}">${s}</option>`).join('');
-                if (model.supported_sizes.includes(prevVal)) {
-                    sizeSelect.value = prevVal;
-                } else {
-                    sizeSelect.value = model.default_size || model.supported_sizes[0];
-                }
-            }
-
-            const promptInput = document.getElementById('imagePrompt');
-            if (promptInput && model.max_prompt_length) {
-                promptInput.setAttribute('maxlength', model.max_prompt_length);
-                updateCounter('imagePrompt', 'imagePromptCounter', model.max_prompt_length);
-            }
+            const model = document.getElementById('imageModel').value;
+            document.getElementById('imageResolutionGroup').style.display = 
+                (model === 'NANO_BANANA_PRO' || model === 'NANO_BANANA_2' || model === 'GPT_IMAGE_2') ? 'block' : 'none';
         }
-
-
 
         function updateCounter(textareaId, counterId, max) {
             const len = document.getElementById(textareaId).value.length;
@@ -2762,18 +2533,8 @@
         function switchTab(id) {
             document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            
-            const targetPanel = document.getElementById(id);
-            if (targetPanel) targetPanel.style.display = 'block';
-            
-            const btnId = 'btn-' + id;
-            const targetBtn = document.getElementById(btnId);
-            if (targetBtn) {
-                targetBtn.classList.add('active');
-            } else if (window.event && window.event.currentTarget) {
-                window.event.currentTarget.classList.add('active');
-            }
-
+            document.getElementById(id).style.display = 'block';
+            event.currentTarget.classList.add('active');
             if (id === 'tab-tts') {
                 initTtsEmotions();
                 updateCounter('ttsText', 'ttsTextCounter', 6000);
@@ -2823,9 +2584,9 @@
                 model: document.getElementById('i2vModel').value,
             };
 
-            const modelMeta = modelsData?.video?.find(m => m.id === body.model);
-            if (modelMeta && modelMeta.supported_sizes && modelMeta.supported_sizes.length === 1 && (modelMeta.supported_sizes[0] === 'AUTO' || modelMeta.supported_sizes[0] === 'Auto')) {
-                body.size = modelMeta.supported_sizes[0];
+            // VIDU_Q3 ve QUALITY_V2_5 için size AUTO, diğerleri seçilen değer
+            if (body.model === 'VIDU_Q3' || body.model === 'QUALITY_V2_5') {
+                body.size = 'AUTO';
             } else {
                 body.size = document.getElementById('i2vSize').value;
             }
@@ -2846,15 +2607,14 @@
 
                 const endInput = document.getElementById('i2vEndFrame');
                 if (endInput.files && endInput.files.length > 0) {
-                    if (modelMeta && modelMeta.supports_end_frame) {
+                    // End frame yalnızca VEO_3 ve SEEDANCE_2_0 destekler;
+                    // diğer modellerde seçili dosya olsa dahi payload'a eklenmez (hata verilmez)
+                    if (body.model === 'VEO_3' || body.model === 'SEEDANCE_2_0') {
                         body.end_frame = await fileToBase64(endInput.files[0]);
                     }
                 }
             } else {
-                if (!modelMeta || !modelMeta.supports_reference_images) { 
-                    alert('Reference Images bu model ile kullanılamaz!'); 
-                    return; 
-                }
+                if (body.model !== 'VEO_3' && body.model !== 'SEEDANCE_2_0') { alert('Reference Images yalnızca VEO_3 ve SEEDANCE_2_0 modelleriyle kullanılabilir!'); return; }
                 const refInput = document.getElementById('i2vRefImages');
                 if (!refInput.files || refInput.files.length === 0) {
                     alert('Lütfen en az 1 referans görsel seçin!'); return;

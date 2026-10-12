@@ -2,21 +2,37 @@ import os
 import json
 import time
 import uuid
-import math
 import threading
+import atexit
+import base64
+import requests
 from flask import Flask, request, jsonify, render_template, Response
 from flask_cors import CORS
-import requests
 import database as db
-import service
+import services
 
 app = Flask(__name__)
 CORS(app)
 
-# Maximum concurrent tasks
+# Graceful shutdown: polling thread'leri temiz kapansın
+_shutdown_event = threading.Event()
+atexit.register(lambda: _shutdown_event.set())
+
+# --- Configuration & Constants ---
 MAX_CONCURRENT_TASKS = 10
 
-# --- Helper Functions ---
+# Proxy headers for image/video proxying (generic, provider-agnostic)
+PROXY_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/150.0.0.0 Safari/537.36"
+    )
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def verify_api_key():
     """Verifies the API key from request headers and returns api_key_id."""
@@ -38,6 +54,348 @@ def can_start_new_task(api_key_id):
     """Checks if a new task can be started (max concurrent limit per user)."""
     return db.get_running_task_count(api_key_id) < MAX_CONCURRENT_TASKS
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMAGE GENERATION WORKER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def process_image_task(task_id, params, api_key_id):
+    """Background worker for image generation via Yolly."""
+    try:
+        db.update_task_status(task_id, 'running')
+        try:
+            session, email = services.create_and_login_new_account()
+            if not session:
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            # Link account email to task immediately
+            db.update_task_account(task_id, email)
+
+            # Save session for crash recovery
+            db.update_task_token(task_id, services.serialize_session_data(session))
+
+            # --- Model mapping ---
+            frontend_model = params.get('model', 'NANO_BANANA_PRO')
+            yolly_model = services.IMAGE_MODEL_MAP.get(frontend_model, 'nano-banana-pro')
+            model_config = services.MODELS.get(yolly_model, {})
+
+            # --- Upload reference images ---
+            ref_urls = []
+            for img_b64 in params.get('reference_images', []):
+                img_data = base64.b64decode(img_b64)
+                url = services.upload_image(session, img_data)
+                if not url:
+                    db.update_task_status(task_id, 'failed')
+                    db.add_task_log(task_id, "Task ID: failed")
+                    return
+                ref_urls.append(url)
+
+            if ref_urls:
+                db.update_task_reference_urls(task_id, ref_urls)
+
+            # --- AR & Resolution mapping ---
+            ar_raw = params.get('size', '1:1')
+            aspect_ratio = services.AR_MAP.get(ar_raw, ar_raw)
+            # Validate AR against model
+            supported_ars = model_config.get("aspect_ratios", [])
+            if supported_ars and aspect_ratio not in supported_ars:
+                aspect_ratio = supported_ars[0]
+
+            resolution_raw = params.get('resolution', '2K')
+            resolution = services.RESOLUTION_MAP.get(resolution_raw, resolution_raw)
+            # Only apply resolution for models that support it
+            if not model_config.get("resolutions"):
+                resolution = None
+
+            # --- Create image task ---
+            ext_task_id = services.create_image(
+                session, params.get('prompt', ''), yolly_model,
+                aspect_ratio, resolution, ref_urls or None
+            )
+
+            if ext_task_id == "INSUFFICIENT_CREDITS":
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            if not ext_task_id:
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            db.update_task_external_data(
+                task_id, ext_task_id,
+                services.serialize_session_data(session)
+            )
+
+            # --- Poll for completion ---
+            status, image_urls = services.poll_image(
+                session, ext_task_id, _shutdown_event
+            )
+
+            if status == 'completed' and image_urls:
+                db.update_task_status(task_id, 'completed', image_urls[0])
+                db.add_task_log(task_id, "Task ID: success")
+                # Save the new account and consume quota from random unused DB account
+                db.consume_quota_and_save_account(api_key_id, email)
+            elif status == 'shutdown':
+                return  # Let recovery handle it
+            else:
+                db.update_task_status(task_id, status or 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+
+        except Exception as e:
+            db.update_task_status(task_id, 'error')
+            db.add_task_log(task_id, "Task ID: failed")
+    except Exception:
+        db.update_task_status(task_id, 'error')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIDEO GENERATION WORKER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def process_video_task(task_id, params, api_key_id):
+    """Background worker for video generation via Yolly."""
+    try:
+        db.update_task_status(task_id, 'running')
+        try:
+            session, email = services.create_and_login_new_account()
+            if not session:
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            # Link account email to task immediately
+            db.update_task_account(task_id, email)
+
+            # Save session for crash recovery
+            db.update_task_token(task_id, services.serialize_session_data(session))
+
+            # --- Model mapping ---
+            frontend_model = params.get('model', 'SORA_2')
+            yolly_model = services.VIDEO_MODEL_MAP.get(frontend_model, 'grok-imagine')
+            model_config = services.MODELS.get(yolly_model, {})
+
+            # --- Determine input mode & upload images ---
+            images = []
+            input_mode = "text"
+
+            start_frame = params.get('start_frame')
+            end_frame = params.get('end_frame')
+            reference_images = params.get('reference_images', [])
+
+            if start_frame:
+                input_mode = "image"
+                img_data = base64.b64decode(start_frame)
+                start_url = services.upload_image(session, img_data)
+                if not start_url:
+                    db.update_task_status(task_id, 'failed')
+                    db.add_task_log(task_id, "Task ID: failed")
+                    return
+                images.append(start_url)
+
+                # End frame (only veo3.1-basic supports start+end frame)
+                if end_frame and model_config.get("supports_start_end_frame", False):
+                    end_data = base64.b64decode(end_frame)
+                    end_url = services.upload_image(session, end_data)
+                    if not end_url:
+                        db.update_task_status(task_id, 'failed')
+                        db.add_task_log(task_id, "Task ID: failed")
+                        return
+                    images.append(end_url)
+                    db.update_task_frame_urls(task_id, start_frame_url=start_url, end_frame_url=end_url)
+                else:
+                    db.update_task_frame_urls(task_id, start_frame_url=start_url, end_frame_url=None)
+
+            elif reference_images:
+                # Reference images → use first one as img2video start frame
+                input_mode = "image"
+                ref_urls = []
+                for ref_b64 in reference_images:
+                    ref_data = base64.b64decode(ref_b64)
+                    ref_url = services.upload_image(session, ref_data)
+                    if not ref_url:
+                        db.update_task_status(task_id, 'failed')
+                        db.add_task_log(task_id, "Task ID: failed")
+                        return
+                    ref_urls.append(ref_url)
+                # Yolly img2video accepts 1 image (or 2 for start/end on veo)
+                images = ref_urls[:1]
+                db.update_task_reference_urls(task_id, ref_urls)
+
+            # --- AR mapping ---
+            size_raw = params.get('size', '16:9')
+            ar = services.AR_MAP.get(size_raw, size_raw)
+            supported_ars = model_config.get("aspect_ratios", [])
+            if supported_ars and ar not in supported_ars:
+                ar = supported_ars[0]
+
+            # --- Resolution & Duration from model config ---
+            resolution = model_config.get("resolutions", ["720p"])[0]
+            duration = model_config.get("durations", ["6"])[0]
+
+            # --- Create video task ---
+            ext_task_id, provider = services.create_video(
+                session, params.get('prompt', ''), yolly_model,
+                input_mode, images, resolution, duration, ar
+            )
+
+            if ext_task_id == "INSUFFICIENT_CREDITS":
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            if not ext_task_id:
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                return
+
+            # Store session + provider for recovery
+            token_data = services.serialize_session_data(session, {"provider": provider})
+            db.update_task_external_data(task_id, ext_task_id, token_data)
+
+            # --- Poll for completion ---
+            status, video_url = services.poll_video(
+                session, ext_task_id, provider, _shutdown_event
+            )
+
+            if status == 'completed' and video_url:
+                db.update_task_status(task_id, 'completed', video_url)
+                db.add_task_log(task_id, "Task ID: success")
+                # Save the new account and consume quota from random unused DB account
+                db.consume_quota_and_save_account(api_key_id, email)
+            elif status == 'shutdown':
+                return  # Let recovery handle it
+            else:
+                db.update_task_status(task_id, status or 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+
+        except Exception as e:
+            db.update_task_status(task_id, 'error')
+            db.add_task_log(task_id, "Task ID: failed")
+    except Exception:
+        db.update_task_status(task_id, 'error')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECOVERY LOGIC
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def poll_image_recovery(task_id, ext_task_id, session, account_email=None, api_key_id=None):
+    """Recovery polling worker for image tasks."""
+    try:
+        status, image_urls = services.poll_image(session, ext_task_id, _shutdown_event)
+        if status == 'completed' and image_urls:
+            db.update_task_status(task_id, 'completed', image_urls[0])
+            db.add_task_log(task_id, "Task ID: success")
+            if account_email and api_key_id:
+                db.consume_quota_and_save_account(api_key_id, account_email)
+        elif status != 'shutdown':
+            db.update_task_status(task_id, status or 'failed')
+            db.add_task_log(task_id, "Task ID: failed")
+    except Exception as e:
+        db.update_task_status(task_id, 'failed')
+        db.add_task_log(task_id, "Task ID: failed")
+
+
+def poll_video_recovery(task_id, ext_task_id, session, provider, account_email=None, api_key_id=None):
+    """Recovery polling worker for video tasks."""
+    try:
+        status, video_url = services.poll_video(session, ext_task_id, provider, _shutdown_event)
+        if status == 'completed' and video_url:
+            db.update_task_status(task_id, 'completed', video_url)
+            db.add_task_log(task_id, "Task ID: success")
+            if account_email and api_key_id:
+                db.consume_quota_and_save_account(api_key_id, account_email)
+        elif status != 'shutdown':
+            db.update_task_status(task_id, status or 'failed')
+            db.add_task_log(task_id, "Task ID: failed")
+    except Exception as e:
+        db.update_task_status(task_id, 'failed')
+        db.add_task_log(task_id, "Task ID: failed")
+
+
+def resume_incomplete_tasks():
+    """Recovers stale tasks and resumes polling for submitted ones."""
+    print("=" * 50)
+    print("[STARTUP] Starting crash recovery...")
+
+    # Phase 1: Clean up truly stale tasks
+    try:
+        recovery_result = db.recover_stale_tasks()
+        if recovery_result['failed_count'] > 0:
+            print(f"[STARTUP] Marked {recovery_result['failed_count']} tasks as failed (never logged in)")
+    except Exception as e:
+        print(f"[STARTUP] Error during stale task recovery: {e}")
+        recovery_result = {'needs_check': []}
+
+    # Phase 2: Tasks with token but no external_task_id → never submitted → fail
+    needs_check = recovery_result.get('needs_check', [])
+    if needs_check:
+        print(f"[STARTUP] Marking {len(needs_check)} unsubmitted tasks as failed...")
+        for t in needs_check:
+            db.update_task_status(t['task_id'], 'failed')
+            db.add_task_log(t['task_id'], "Task ID: failed")
+
+    # Phase 3: Resume polling for confirmed submitted tasks
+    try:
+        tasks = db.get_incomplete_tasks()
+        if tasks:
+            print(f"[STARTUP] Resuming polling for {len(tasks)} submitted tasks...")
+        else:
+            print("[STARTUP] No tasks to resume.")
+
+        for t in tasks:
+            task_id = t['task_id']
+            mode = t['mode']
+            ext_id = t['external_task_id']
+            token_str = t['token']
+            account_email = t.get('account_email')
+            api_key_id_val = t.get('api_key_id')
+
+            # TTS/Music: no longer supported → mark failed
+            if mode in ('tts', 'music'):
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                continue
+
+            # Deserialize session
+            try:
+                session, data = services.deserialize_session_data(token_str)
+            except Exception:
+                db.update_task_status(task_id, 'failed')
+                db.add_task_log(task_id, "Task ID: failed")
+                continue
+
+            print(f"  [RESUME] Task {task_id} ({mode}) — External ID: {ext_id}")
+
+            if mode == 'image':
+                threading.Thread(
+                    target=poll_image_recovery,
+                    args=(task_id, ext_id, session, account_email, api_key_id_val)
+                ).start()
+            elif mode == 'video':
+                provider = data.get("provider", "")
+                threading.Thread(
+                    target=poll_video_recovery,
+                    args=(task_id, ext_id, session, provider, account_email, api_key_id_val)
+                ).start()
+
+    except Exception as e:
+        print(f"[STARTUP] Error during task resume: {e}")
+
+    print("[STARTUP] Crash recovery complete.")
+    print("=" * 50)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TASK FIELD FILTERING
+# ═══════════════════════════════════════════════════════════════════════════════
+
 TASK_FIELDS_BY_MODE = {
     'image': ['task_id', 'mode', 'status', 'result_url', 'prompt', 'model', 'size', 'resolution', 'reference_image_urls', 'logs', 'created_at'],
     'video': ['task_id', 'mode', 'status', 'result_url', 'prompt', 'model', 'size', 'resolution', 'duration', 'start_frame_url', 'end_frame_url', 'reference_image_urls', 'logs', 'created_at'],
@@ -57,14 +415,15 @@ def filter_task_fields(task):
         result['instrumental'] = bool(result.get('instrumental'))
     return result
 
-# --- Error Handler ---
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FLASK ROUTES
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @app.errorhandler(Exception)
 def handle_exception(e):
     print(f"[ERROR] {request.method} {request.path} → {type(e).__name__}: {e}")
     return jsonify({"error": "Internal server error"}), 500
-
-# --- Page Routes ---
 
 @app.route('/', methods=['GET'])
 def index():
@@ -74,40 +433,26 @@ def index():
 def api_doc():
     return render_template('apiDocNoTTS.html')
 
-# --- Models Endpoint ---
-
-@app.route('/api/models', methods=['GET'])
-def get_models():
-    api_key_id = verify_api_key()
-    if not api_key_id:
-        return jsonify({"error": "Unauthorized"}), 401
-    return jsonify(service.get_available_models())
-
-@app.route('/api/models/<mode>', methods=['GET'])
-def get_models_by_mode(mode):
-    api_key_id = verify_api_key()
-    if not api_key_id:
-        return jsonify({"error": "Unauthorized"}), 401
-    models = service.get_available_models(mode)
-    if not models:
-        return jsonify({"error": f"Unknown mode: {mode}"}), 404
-    return jsonify(models)
-
-# --- Proxy ---
-
-@app.route('/api/proxy', methods=['GET'])
-def proxy():
+@app.route('/api/image-proxy', methods=['GET'])
+def image_proxy():
     url = request.args.get('url')
     if not url:
         return jsonify({"error": "url parametresi gerekli"}), 400
 
+    fwd_headers = dict(PROXY_HEADERS)
     range_header = request.headers.get('Range')
-    stream_content, status_code, headers = service.proxy_request(url, range_header)
+    if range_header:
+        fwd_headers['Range'] = range_header  # video/mp3 seek desteği
 
-    return Response(stream_content, status=status_code, headers=headers)
+    r = requests.get(url, headers=fwd_headers, stream=True, timeout=(30, 120))
+
+    excluded = {'content-encoding', 'transfer-encoding', 'connection'}
+    resp_headers = [(k, v) for k, v in r.headers.items() if k.lower() not in excluded]
+
+    return Response(r.iter_content(chunk_size=8192), status=r.status_code, headers=resp_headers)
 
 
-# --- Generation Endpoints ---
+# ── IMAGE GENERATION ──────────────────────────────────────────────────────────
 
 @app.route('/api/generate/image', methods=['POST'])
 def generate_image():
@@ -118,29 +463,19 @@ def generate_image():
     data = request.json
     if not data or 'prompt' not in data:
         return jsonify({"error": "Prompt required"}), 400
-
-    image_models = service.get_available_models('image')
-    default_model = image_models[0]['id'] if image_models else 'default'
-    model = data.get('model') or default_model
-    model_meta = next((m for m in image_models if m['id'] == model), None)
     
-    if not model_meta:
-        return jsonify({"error": f"Unknown model: {model}"}), 400
-
-    # 1. Validate Prompt
-    max_prompt = model_meta.get('max_prompt_length', 4000)
-    if len(data.get('prompt', '')) > max_prompt:
-        return jsonify({"error": f"Prompt must be {max_prompt} characters or less"}), 400
-
-    # 2. Validate Reference Images
     images = data.get('reference_images', [])
-    supports_ref = model_meta.get('supports_reference_images', False)
-    max_ref = model_meta.get('max_reference_images', 5)
-    if images:
-        if not supports_ref:
-            return jsonify({"error": f"{model} model does not support reference_images"}), 400
-        if isinstance(images, list) and len(images) > max_ref:
-            return jsonify({"error": f"Maximum {max_ref} images allowed"}), 400
+    if isinstance(images, list) and len(images) > 5:
+        return jsonify({"error": "Maximum 5 images allowed"}), 400
+
+    if len(data.get('prompt', '')) > 4000:
+        return jsonify({"error": "Prompt must be 4000 characters or less"}), 400
+
+    model = data.get('model', 'NANO_BANANA_PRO')
+    if model in ('NANO_BANANA_PRO', 'NANO_BANANA_2', 'GPT_IMAGE_2'):
+        resolution = data.get('resolution', '2K')
+        if resolution not in ['1K', '2K', '4K']:
+            return jsonify({"error": "Invalid resolution. Must be one of: 1K, 2K, 4K"}), 400
 
     if db.get_account_count(api_key_id) == 0:
         return jsonify({"error": "No quota available"}), 503
@@ -151,26 +486,10 @@ def generate_image():
             "error": "Maximum concurrent tasks reached",
             "message": f"Currently {running_count}/{MAX_CONCURRENT_TASKS} tasks running. Please wait."
         }), 429
-
-    # 3. Resolve Size
-    size = data.get('size')
-    supported_sizes = model_meta.get('supported_sizes', [])
-    if supported_sizes:
-        if size not in supported_sizes:
-            size = model_meta.get('default_size') or supported_sizes[0]
-    else:
-        size = size or '16:9'
-
-    # 4. Resolve Resolution
-    resolution = data.get('resolution')
-    supported_resolutions = model_meta.get('supported_resolutions', [])
-    if supported_resolutions:
-        if resolution not in supported_resolutions:
-            resolution = model_meta.get('default_resolution') or supported_resolutions[0]
-    else:
-        resolution = None
     
     task_id = str(uuid.uuid4())
+    size = data.get('size', '16:9')
+    resolution = data.get('resolution', '2K') if model in ('NANO_BANANA_PRO', 'NANO_BANANA_2', 'GPT_IMAGE_2') else None
     db.create_task(api_key_id, task_id, 'image',
                    prompt=data.get('prompt'),
                    model=model,
@@ -178,9 +497,11 @@ def generate_image():
                    resolution=resolution,
                    duration=None)
     
-    threading.Thread(target=service.process_image_task, args=(task_id, data, api_key_id)).start()
+    threading.Thread(target=process_image_task, args=(task_id, data, api_key_id)).start()
     return jsonify({"task_id": task_id})
 
+
+# ── VIDEO GENERATION ──────────────────────────────────────────────────────────
 
 @app.route('/api/generate/video', methods=['POST'])
 def generate_video():
@@ -192,51 +513,56 @@ def generate_video():
     if not data or 'prompt' not in data:
         return jsonify({"error": "Prompt required"}), 400
 
-    video_models = service.get_available_models('video')
-    default_model = video_models[0]['id'] if video_models else 'default'
-    model = data.get('model') or default_model
-    model_meta = next((m for m in video_models if m['id'] == model), None)
-    
-    if not model_meta:
-        return jsonify({"error": f"Unknown model: {model}"}), 400
-
-    # 1. Validate Prompt
-    max_prompt = model_meta.get('max_prompt_length', 2000)
-    if len(data.get('prompt', '')) > max_prompt:
-        return jsonify({"error": f"Prompt must be {max_prompt} characters or less"}), 400
-
-    # 2. Validate Frame inputs
-    # Check start_frame support
-    has_start = bool(data.get('start_frame'))
-    requires_start = model_meta.get('requires_start_frame', False)
-    supports_start = model_meta.get('supports_start_frame', True)
-    if requires_start and not has_start:
-        return jsonify({"error": f"{model} model requires a start frame (image)"}), 400
-    if has_start and not supports_start:
-        return jsonify({"error": f"{model} model does not support start_frame"}), 400
-
-    # Check end_frame support
-    has_end = bool(data.get('end_frame'))
-    supports_end = model_meta.get('supports_end_frame', False)
-    if has_end and not supports_end:
-        return jsonify({"error": f"{model} model does not support end_frame"}), 400
-    if has_end and not has_start:
-        return jsonify({"error": "end_frame requires image (start frame) to be provided"}), 400
-
-    # Check reference images support
-    ref_images = data.get('reference_images', [])
-    supports_ref = model_meta.get('supports_reference_images', False)
-    max_ref = model_meta.get('max_reference_images', 0)
-    if ref_images:
-        if not supports_ref:
-            return jsonify({"error": f"{model} model does not support reference_images"}), 400
-        if len(ref_images) > max_ref:
-            return jsonify({"error": f"Maximum {max_ref} reference images allowed"}), 400
-        if has_start or has_end:
-            return jsonify({"error": "reference_images cannot be used together with image or end_frame"}), 400
+    if len(data.get('prompt', '')) > 2000:
+        return jsonify({"error": "Prompt must be 2000 characters or less"}), 400
 
     if db.get_account_count(api_key_id) == 0:
         return jsonify({"error": "No quota available"}), 503
+
+    model = data.get('model', 'SORA_2')
+
+    # Model-specific validations (kept from original for frontend compatibility)
+    if model == 'VIDU_Q3':
+        if not data.get('start_frame'):
+            return jsonify({"error": "VIDU_Q3 model requires a start frame (image)"}), 400
+        if data.get('end_frame'):
+            return jsonify({"error": "VIDU_Q3 model does not support end_frame"}), 400
+        if data.get('reference_images'):
+            return jsonify({"error": "VIDU_Q3 model does not support reference_images"}), 400
+
+    if model == 'SORA_2':
+        if data.get('end_frame'):
+            return jsonify({"error": "SORA_2 model does not support end_frame"}), 400
+        if data.get('reference_images'):
+            return jsonify({"error": "SORA_2 model does not support reference_images"}), 400
+
+    if model == 'QUALITY_V2_5':
+        if not data.get('start_frame'):
+            return jsonify({"error": "QUALITY_V2_5 model requires a start frame (image)"}), 400
+        if data.get('end_frame'):
+            return jsonify({"error": "QUALITY_V2_5 model does not support end_frame"}), 400
+        if data.get('reference_images'):
+            return jsonify({"error": "QUALITY_V2_5 model does not support reference_images"}), 400
+
+    if model == 'VEO_3' and data.get('end_frame') and not data.get('start_frame'):
+        return jsonify({"error": "end_frame requires image (start frame) to be provided"}), 400
+
+    if model == 'VEO_3':
+        reference_images = data.get('reference_images', [])
+        if isinstance(reference_images, list) and len(reference_images) > 3:
+            return jsonify({"error": "Maximum 3 reference images allowed"}), 400
+        if reference_images and (data.get('start_frame') or data.get('end_frame')):
+            return jsonify({"error": "reference_images cannot be used together with image or end_frame"}), 400
+
+    if model == 'SEEDANCE_2_0' and data.get('end_frame') and not data.get('start_frame'):
+        return jsonify({"error": "end_frame requires image (start frame) to be provided"}), 400
+
+    if model == 'SEEDANCE_2_0':
+        reference_images = data.get('reference_images', [])
+        if isinstance(reference_images, list) and len(reference_images) > 3:
+            return jsonify({"error": "Maximum 3 reference images allowed"}), 400
+        if reference_images and (data.get('start_frame') or data.get('end_frame')):
+            return jsonify({"error": "reference_images cannot be used together with image or end_frame"}), 400
     
     running_count = db.get_running_task_count(api_key_id)
     if running_count >= MAX_CONCURRENT_TASKS:
@@ -244,63 +570,24 @@ def generate_video():
             "error": "Maximum concurrent tasks reached",
             "message": f"Currently {running_count}/{MAX_CONCURRENT_TASKS} tasks running. Please wait."
         }), 429
-    
-    # 3. Resolve Size
-    size = data.get('size')
-    supported_sizes = model_meta.get('supported_sizes', [])
-    if supported_sizes:
-        if size not in supported_sizes:
-            size = model_meta.get('default_size') or supported_sizes[0]
-    else:
-        size = size or '16:9'
 
-    # 4. Resolve Duration
-    duration = data.get('duration')
-    supported_durations = model_meta.get('supported_durations', [])
-    if duration is not None:
-        try:
-            duration = int(duration)
-        except ValueError:
-            duration = None
-            
-    if supported_durations:
-        if duration not in supported_durations:
-            duration = model_meta.get('default_duration') or supported_durations[0]
-    else:
-        duration = duration or model_meta.get('duration') or 10
+    # Get Yolly model params for DB storage
+    yolly_model, yolly_res, yolly_dur, _ = services.get_video_params(model)
 
-    # 5. Resolve Resolution
-    resolution = data.get('resolution')
-    supported_resolutions = model_meta.get('supported_resolutions', [])
-    if supported_resolutions:
-        if resolution not in supported_resolutions:
-            resolution = model_meta.get('default_resolution') or supported_resolutions[0]
-    else:
-        resolution = resolution or model_meta.get('resolution') or '720p'
-
-    # 6. Apply constraints if any
-    constraints = model_meta.get('constraints', [])
-    for c in constraints:
-        cond = c.get('if', {})
-        then = c.get('then', {})
-        if 'resolution' in cond and cond['resolution'] == resolution:
-            if 'duration' in then and duration not in then['duration']:
-                duration = then['duration'][0]
-        if 'duration' in cond and cond['duration'] == duration:
-            if 'resolution' in then and resolution != then['resolution']:
-                resolution = then['resolution']
-                
     task_id = str(uuid.uuid4())
+    size = data.get('size', '16:9')
     db.create_task(api_key_id, task_id, 'video',
                    prompt=data.get('prompt'),
                    model=model,
                    size=size,
-                   resolution=resolution,
-                   duration=duration)
+                   resolution=yolly_res,
+                   duration=int(yolly_dur))
     
-    threading.Thread(target=service.process_video_task, args=(task_id, data, api_key_id)).start()
+    threading.Thread(target=process_video_task, args=(task_id, data, api_key_id)).start()
     return jsonify({"task_id": task_id})
 
+
+# ── TTS (DISABLED) ────────────────────────────────────────────────────────────
 
 @app.route('/api/generate/tts', methods=['POST'])
 def generate_tts():
@@ -308,90 +595,10 @@ def generate_tts():
     if not api_key_id:
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.json
-    if not data or 'text' not in data:
-        return jsonify({"error": "Text required"}), 400
-
-    if db.get_account_count(api_key_id) == 0:
-        return jsonify({"error": "No quota available"}), 503
-    
-    running_count = db.get_running_task_count(api_key_id)
-    if running_count >= MAX_CONCURRENT_TASKS:
-        return jsonify({
-            "error": "Maximum concurrent tasks reached",
-            "message": f"Currently {running_count}/{MAX_CONCURRENT_TASKS} tasks running. Please wait."
-        }), 429
-    
-    tts_models = service.get_available_models('tts')
-    default_model = tts_models[0]['id'] if tts_models else 'default'
-    model = data.get('model') or default_model
-
-    task_id = str(uuid.uuid4())
-    db.create_task(api_key_id, task_id, 'tts',
-                   prompt=data.get('text'),
-                   model=model,
-                   voice_id=data.get('voiceId'),
-                   speed=data.get('speed'),
-                   pitch=data.get('pitch'),
-                   volume=data.get('volume'),
-                   emotion=data.get('emotion'))
-    
-    threading.Thread(target=service.process_tts_task, args=(task_id, data, api_key_id)).start()
-    return jsonify({"task_id": task_id})
-
-@app.route('/api/generate/music', methods=['POST'])
-def generate_music():
-    api_key_id = verify_api_key()
-    if not api_key_id:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    data = request.json
-    if not data or 'prompt' not in data:
-        return jsonify({"error": "Prompt required"}), 400
-
-    if db.get_account_count(api_key_id) == 0:
-        return jsonify({"error": "No quota available"}), 503
-
-    running_count = db.get_running_task_count(api_key_id)
-    if running_count >= MAX_CONCURRENT_TASKS:
-        return jsonify({
-            "error": "Maximum concurrent tasks reached",
-            "message": f"Currently {running_count}/{MAX_CONCURRENT_TASKS} tasks running. Please wait."
-        }), 429
-
-    music_models = service.get_available_models('music')
-    default_model = music_models[0]['id'] if music_models else 'default'
-    model = data.get('model') or default_model
-    task_id = str(uuid.uuid4())
-
-    # Frontend → API mapping
-    main_mode = data.get('main_mode', 'Vocal')
-    instrumental = 1 if main_mode == 'Instrumental' else 0
-    audio_usage = data.get('mode', 'TEXT')
-
-    db.create_task(api_key_id, task_id, 'music',
-                   prompt=data.get('prompt'),
-                   model=model,
-                   style=data.get('style'),
-                   lyrics=data.get('lyrics'),
-                   instrumental=instrumental,
-                   audio_usage=audio_usage)
-
-    # Worker'a Deevid uyumlu parametreler gönder
-    worker_data = {
-        'prompt': data.get('prompt', ''),
-        'model': model,
-        'style': data.get('style', ''),
-        'lyrics': data.get('lyrics', ''),
-        'instrumental': main_mode == 'Instrumental',
-        'audioUsage': audio_usage,
-        'audio_base64': data.get('audio'),
-    }
-
-    threading.Thread(target=service.process_music_task, args=(task_id, worker_data, api_key_id)).start()
-    return jsonify({"task_id": task_id})
-
-# --- TTS Voices ---
+    return jsonify({
+        "error": "This feature is currently unavailable.",
+        "message": "Text-to-Speech generation is temporarily disabled. Please try again later."
+    }), 503
 
 @app.route('/api/tts/voices', methods=['GET'])
 def get_tts_voices():
@@ -399,12 +606,27 @@ def get_tts_voices():
     if not api_key_id:
         return jsonify({"error": "Unauthorized"}), 401
 
-    voices, error = service.get_tts_voices(api_key_id)
-    if error:
-        return jsonify({"error": error}), 503 if error == "No quota available" else 500
-    return jsonify({"voices": voices})
+    return jsonify({
+        "error": "This feature is currently unavailable.",
+        "message": "TTS voice listing is temporarily disabled."
+    }), 503
 
-# --- Status Endpoints ---
+
+# ── MUSIC (DISABLED) ──────────────────────────────────────────────────────────
+
+@app.route('/api/generate/music', methods=['POST'])
+def generate_music():
+    api_key_id = verify_api_key()
+    if not api_key_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return jsonify({
+        "error": "This feature is currently unavailable.",
+        "message": "Music generation is temporarily disabled. Please try again later."
+    }), 503
+
+
+# ── STATUS & TASK MANAGEMENT ─────────────────────────────────────────────────
 
 @app.route('/api/status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
@@ -443,6 +665,7 @@ def get_all_tasks_status():
 
         tasks_raw, total = db.get_tasks_paginated(api_key_id, page, per_page)
         tasks = [filter_task_fields(t) for t in tasks_raw]
+        import math
         total_pages = math.ceil(total / per_page) if total > 0 else 1
 
         return jsonify({
@@ -463,7 +686,8 @@ def get_all_tasks_status():
         "max_concurrent": MAX_CONCURRENT_TASKS
     })
 
-# --- Quota & Account Endpoints ---
+
+# ── QUOTA & ACCOUNTS ─────────────────────────────────────────────────────────
 
 @app.route('/api/quota', methods=['GET'])
 def get_quota():

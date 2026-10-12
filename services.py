@@ -315,7 +315,7 @@ def deserialize_session_data(json_str):
     return session, data
 
 
-def get_yolly_turnstile_token(timeout: int = 25) -> str | None:
+def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
     print("[*] Cloudflare Turnstile token alınıyor (yolly.ai - CloakBrowser)...")
     proxy = os.environ.get("CLOAK_PROXY", "http://plasthjw-2:vh917rfhzcxi@p.webshare.io:80")
     browser = None

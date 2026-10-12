@@ -3504,7 +3504,8 @@
                         badge.style.background = 'var(--emerald-dim)';
                         badge.style.color = 'var(--emerald)';
                         badge.style.borderColor = 'var(--emerald)';
-                        badge.textContent = `🟢 Aktif: ${data.status}`;
+                        const prefix = data.session_type === 'test' ? '🧪 Test' : '🟢 Normal İşlem';
+                        badge.textContent = `${prefix}: ${data.status}`;
                     } else {
                         badge.style.background = 'var(--violet-dim)';
                         badge.style.color = 'var(--violet)';
@@ -3514,9 +3515,6 @@
 
                     if (data.has_screenshot && !currentScreenshotUrl) {
                         loadExistingScreenshot();
-                    }
-                    if (showNotification) {
-                        alert(`ℹ️ Tarayıcı Durumu: ${data.status}`);
                     }
                 }
             } catch (e) {
@@ -3557,22 +3555,49 @@
 
             if (btn) btn.disabled = true;
             if (placeholder) placeholder.style.display = 'none';
-            if (img) img.style.display = 'none';
             if (loading) loading.style.display = 'block';
-            if (loadingText) loadingText.textContent = '📸 Tarayıcı başlatılıyor...';
-            if (loadingSubtext) loadingSubtext.textContent = 'İşlem arka planda yürütülüyor, sayfa donmaz.';
+            if (loadingText) loadingText.textContent = '📸 İşlem başlatılıyor...';
+            if (loadingSubtext) loadingSubtext.textContent = 'Lütfen bekleyin...';
 
             try {
-                // 1. Arka plan yakalamasını tetikle (anında yanıt döner, sunucuyu kitlemez)
+                // 1. Arka plan yakalamasını tetikle
                 const res = await fetch(`${API_BASE()}/api/browser/capture`, { method: 'POST' });
                 const data = await res.json();
 
+                const isAlreadyActive = (data.status === 'active_session');
                 const initialSsTime = (data.browser_status && data.browser_status.last_screenshot_time) || 0;
                 const startTime = Date.now();
 
+                // Senaryo A: Tarayıcı zaten açık (normal işlem veya test sürüyor) -> Anlık kareyi al
+                if (isAlreadyActive) {
+                    if (loadingText) loadingText.textContent = '📸 Açık olan tarayıcının o anki görüntüsü alınıyor...';
+                    if (loadingSubtext) loadingSubtext.textContent = 'Aktif oturumun canlı görüntüsü yükleniyor...';
+
+                    setTimeout(async () => {
+                        try {
+                            const statusRes = await fetch(`${API_BASE()}/api/browser/status?t=${Date.now()}`);
+                            const statusData = await statusRes.json();
+                            if (statusData.has_screenshot) {
+                                renderScreenshotImage(statusData.last_screenshot_time);
+                            }
+                            if (badge) {
+                                badge.style.background = 'var(--emerald-dim)';
+                                badge.style.color = 'var(--emerald)';
+                                const prefix = statusData.session_type === 'test' ? '🧪 Test' : '🟢 Normal İşlem';
+                                badge.textContent = `${prefix}: ${statusData.status}`;
+                            }
+                        } catch (e) {}
+                        if (btn) btn.disabled = false;
+                    }, 1500);
+                    return;
+                }
+
+                // Senaryo B: Tarayıcı açık değildi -> Test modu başladı: CF çözülünce otomatik kapanacak!
+                if (loadingText) loadingText.textContent = '🧪 Test tarayıcısı başlatıldı...';
+                if (loadingSubtext) loadingSubtext.textContent = 'Turnstile (CF) bekleniyor, çözülünce otomatik kapanacak.';
+
                 if (browserPollInterval) clearInterval(browserPollInterval);
 
-                // 2. Arka plan durumunu sorgula (her 800ms)
                 browserPollInterval = setInterval(async () => {
                     try {
                         const statusRes = await fetch(`${API_BASE()}/api/browser/status?t=${Date.now()}`);
@@ -3581,17 +3606,13 @@
 
                         if (badge) {
                             if (statusData.is_active) {
-                                badge.style.background = 'var(--emerald-dim)';
-                                badge.style.color = 'var(--emerald)';
-                                badge.textContent = `🟢 Turnstile Aktif: ${statusData.status}`;
-                            } else if (statusData.is_capturing) {
                                 badge.style.background = 'var(--amber-dim)';
                                 badge.style.color = 'var(--amber)';
-                                badge.textContent = `⏳ ${statusData.status}`;
+                                badge.textContent = `⏳ Test: ${statusData.status}`;
                             } else {
-                                badge.style.background = 'var(--violet-dim)';
-                                badge.style.color = 'var(--violet)';
-                                badge.textContent = `⚪ ${statusData.status || 'Boşta'}`;
+                                badge.style.background = 'var(--emerald-dim)';
+                                badge.style.color = 'var(--emerald)';
+                                badge.textContent = `✅ ${statusData.status || 'CF Çözüldü (Kapandı)'}`;
                             }
                         }
 
@@ -3599,37 +3620,45 @@
                             loadingText.textContent = `📸 ${statusData.status}`;
                         }
 
-                        // Yeni ekran görüntüsü alındı mı?
-                        const hasNewSs = statusData.last_screenshot_time > initialSsTime;
-                        const captureFinished = !statusData.is_capturing && !statusData.is_active;
+                        // Canlı ekran görüntüsünü periyodik güncelle
+                        if (statusData.has_screenshot && statusData.last_screenshot_time > initialSsTime) {
+                            const liveUrl = `${API_BASE()}/screenshot?t=${statusData.last_screenshot_time}`;
+                            if (img.src !== liveUrl) {
+                                img.src = liveUrl;
+                                img.style.display = 'block';
+                                if (placeholder) placeholder.style.display = 'none';
+                                if (loading) loading.style.display = 'none';
+                            }
+                        }
 
-                        if (hasNewSs || (captureFinished && (Date.now() - startTime > 2500))) {
+                        // CF döndü ve tarayıcı kapandı mı? (is_active: false)
+                        if (!statusData.is_active && (Date.now() - startTime > 2500)) {
                             clearInterval(browserPollInterval);
                             browserPollInterval = null;
 
                             if (statusData.has_screenshot) {
                                 renderScreenshotImage(statusData.last_screenshot_time);
                             } else {
-                                showScreenshotError('Ekran görüntüsü kaydedilemedi.');
+                                showScreenshotError('Ekran görüntüsü kaydedilemedi: ' + (statusData.status || 'Hata'));
                             }
                             if (btn) btn.disabled = false;
                         }
 
-                        // 35 saniye zaman aşımı kontrolü
-                        if (Date.now() - startTime > 35000) {
+                        // 180 saniye zaman aşımı kontrolü
+                        if (Date.now() - startTime > 180000) {
                             clearInterval(browserPollInterval);
                             browserPollInterval = null;
                             if (statusData.has_screenshot) {
                                 renderScreenshotImage(statusData.last_screenshot_time);
                             } else {
-                                showScreenshotError('Zaman aşımı: Tarayıcı 35 saniye içinde yanıt vermedi.');
+                                showScreenshotError('Zaman aşımı: Test süresi doldu.');
                             }
                             if (btn) btn.disabled = false;
                         }
                     } catch (e) {
                         console.error('Browser status poll hatası:', e);
                     }
-                }, 800);
+                }, 1000);
 
             } catch (err) {
                 console.error(err);

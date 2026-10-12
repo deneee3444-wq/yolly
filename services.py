@@ -319,15 +319,52 @@ def deserialize_session_data(json_str):
 # BROWSER SCREENSHOT & MONITORING STATE
 # ══════════════════════════════════════════════════════════════════════════════
 WEBSHARE_PROXIES = [
-    f"http://ovpzznwp-{i}:yg8clovvnoj5@p.webshare.io:80" for i in range(1, 11)
+    "http://tghpxuwn:dxrsnpsyz3df@45.38.107.97:6014",
+    "http://tghpxuwn:dxrsnpsyz3df@64.137.96.74:6641",
+    "http://tghpxuwn:dxrsnpsyz3df@198.23.243.226:6361",
+    "http://tghpxuwn:dxrsnpsyz3df@38.154.185.97:6370",
+    "http://tghpxuwn:dxrsnpsyz3df@84.247.60.125:6095",
+    "http://tghpxuwn:dxrsnpsyz3df@191.96.254.138:6185",
+    "http://tghpxuwn:dxrsnpsyz3df@198.46.161.42:5092",
+    "http://tghpxuwn:dxrsnpsyz3df@64.137.10.153:5803",
+    "http://tghpxuwn:dxrsnpsyz3df@104.164.49.38:7693",
+    "http://tghpxuwn:dxrsnpsyz3df@23.26.71.145:5628",
 ]
 
 
 def get_cloak_proxy():
-    env_p = os.environ.get("CLOAK_PROXY") or os.environ.get("PROXY")
-    if env_p and "plasthjw" not in env_p:
-        return env_p
-    return random.choice(WEBSHARE_PROXIES)
+    """
+    CloakBrowser için proxy döndürür.
+    1. CLOAK_PROXY ortam değişkeni tanımlıysa onu döndürür.
+    2. WEBSHARE_PROXIES listesinden rastgele bir proxy seçer.
+    3. Eğer proxy listesi boşsa veya bulunamazsa None (proxysiz doğrudan bağlantı) döner.
+    """
+    env_p = os.environ.get("CLOAK_PROXY")
+    if env_p and env_p.strip():
+        return env_p.strip()
+
+    valid_proxies = [p for p in WEBSHARE_PROXIES if p and p.strip()]
+    if valid_proxies:
+        return random.choice(valid_proxies)
+    return None
+
+
+def launch_cloak_browser(proxy=None):
+    """CloakBrowser başlatma yardımcısı."""
+    kwargs = {
+        "headless": True,
+        "humanize": True,
+        "stealth_args": True,
+        "args": [
+            "--disable-infobars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--window-size=1280,800",
+        ]
+    }
+    if proxy:
+        kwargs["proxy"] = proxy
+    return launch(**kwargs)
 
 
 BROWSER_STATE = {
@@ -370,26 +407,34 @@ def _run_test_browser_session():
         BROWSER_STATE["token"] = None
 
     proxy = get_cloak_proxy()
-    print(f"[*] Test CloakBrowser başlatılıyor (Proxy: {proxy})...")
+    if proxy:
+        print(f"[*] Test CloakBrowser başlatılıyor (Proxy: {proxy})...")
+    else:
+        print("[*] Test CloakBrowser başlatılıyor (Doğrudan bağlantı)...")
+
     browser = None
     try:
-        browser = launch(
-            headless=True,
-            proxy=proxy,
-            humanize=True,
-            stealth_args=True,
-            args=[
-                "--disable-infobars",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--window-size=1280,800",
-            ]
-        )
+        browser = launch_cloak_browser(proxy=proxy)
         page = browser.new_page()
         with _browser_state_lock:
             BROWSER_STATE["status"] = "Giriş sayfası açılıyor..."
 
-        page.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
+        signin_url = "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite"
+        try:
+            page.goto(signin_url, wait_until="domcontentloaded", timeout=45000)
+        except Exception as nav_err:
+            if proxy:
+                print(f"[!] Proxy ile sayfa açılamadı ({nav_err}), proxysiz doğrudan bağlantıya geçiliyor...")
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+                proxy = None
+                browser = launch_cloak_browser(proxy=None)
+                page = browser.new_page()
+                page.goto(signin_url, wait_until="domcontentloaded", timeout=45000)
+            else:
+                raise
 
         try:
             ss = page.screenshot()
@@ -500,6 +545,11 @@ def trigger_browser_capture():
 def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
     print("[*] Cloudflare Turnstile token alınıyor (yolly.ai - CloakBrowser)...")
     proxy = get_cloak_proxy()
+    if proxy:
+        print(f"[*] CloakBrowser başlatılıyor (Proxy: {proxy})...")
+    else:
+        print("[*] CloakBrowser başlatılıyor (Doğrudan bağlantı)...")
+
     browser = None
     try:
         with _browser_state_lock:
@@ -508,21 +558,28 @@ def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
             BROWSER_STATE["screenshot_requested"] = False
             BROWSER_STATE["status"] = "CloakBrowser başlatılıyor..."
             BROWSER_STATE["token"] = None
-        browser = launch(
-            headless=True,
-            proxy=proxy,
-            humanize=True,
-            stealth_args=True,
-            args=[
-                "--disable-infobars",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ]
-        )
+
+        browser = launch_cloak_browser(proxy=proxy)
         page = browser.new_page()
         with _browser_state_lock:
             BROWSER_STATE["status"] = "Giriş sayfası açılıyor..."
-        page.goto("https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite", wait_until="domcontentloaded")
+
+        signin_url = "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite"
+        try:
+            page.goto(signin_url, wait_until="domcontentloaded", timeout=45000)
+        except Exception as nav_err:
+            if proxy:
+                print(f"[!] Proxy ile sayfa açılamadı ({nav_err}), proxysiz doğrudan bağlantıya geçiliyor...")
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+                proxy = None
+                browser = launch_cloak_browser(proxy=None)
+                page = browser.new_page()
+                page.goto(signin_url, wait_until="domcontentloaded", timeout=45000)
+            else:
+                raise
 
         try:
             ss = page.screenshot()

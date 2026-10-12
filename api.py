@@ -455,15 +455,29 @@ def image_proxy():
 @app.route('/screenshot', methods=['GET'])
 @app.route('/api/browser/screenshot', methods=['GET'])
 def browser_screenshot():
-    force = request.args.get('force', '0').lower() in ('1', 'true', 'yes')
-    img_bytes, ss_time, status_str = services.get_browser_screenshot(force_fresh=force)
+    with services._browser_state_lock:
+        img_bytes = services.BROWSER_STATE.get("last_screenshot")
+        ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
+        status_str = services.BROWSER_STATE.get("status", "Boşta")
+
     if img_bytes:
         resp = Response(img_bytes, mimetype="image/png")
         resp.headers['X-Screenshot-Time'] = str(ss_time)
         resp.headers['X-Browser-Status'] = status_str
         resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         return resp
-    return jsonify({"error": "Tarayıcı ekran görüntüsü alınamadı", "status": status_str}), 503
+    return jsonify({"error": "Henüz ekran görüntüsü alınmadı", "status": status_str}), 404
+
+
+@app.route('/api/browser/capture', methods=['POST', 'GET'])
+def browser_capture():
+    status_code, message = services.trigger_browser_capture()
+    return jsonify({
+        "ok": True,
+        "status": status_code,
+        "message": message,
+        "browser_status": services.get_browser_status()
+    })
 
 
 @app.route('/api/browser/status', methods=['GET'])

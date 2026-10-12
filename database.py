@@ -10,11 +10,11 @@ import contextlib
 from datetime import datetime
 
 # PostgreSQL Configuration
-DATABASE_URL = ""
+DATABASE_URL = "postgresql://neondb_owner:npg_Hb5QoPL8MCOf@ep-morning-glade-aindpl1a-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-DB_TYPE = ''
+DB_TYPE = 'postgresql'
 print(f"Using PostgreSQL database")
 
 db_lock = threading.Lock()  # Only used for SQLite

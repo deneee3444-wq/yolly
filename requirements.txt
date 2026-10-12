@@ -4,4 +4,5 @@ gunicorn
 requests
 Pillow
 psycopg2-binary
-cryptography
+bs4
+cloakbrowser

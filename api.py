@@ -463,7 +463,6 @@ def browser_screenshot():
     if img_bytes:
         resp = Response(img_bytes, mimetype="image/png")
         resp.headers['X-Screenshot-Time'] = str(ss_time)
-        resp.headers['X-Browser-Status'] = status_str
         resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         return resp
     return jsonify({"error": "Henüz ekran görüntüsü alınmadı", "status": status_str}), 404

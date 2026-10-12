@@ -452,6 +452,25 @@ def image_proxy():
     return Response(r.iter_content(chunk_size=8192), status=r.status_code, headers=resp_headers)
 
 
+@app.route('/screenshot', methods=['GET'])
+@app.route('/api/browser/screenshot', methods=['GET'])
+def browser_screenshot():
+    force = request.args.get('force', '0').lower() in ('1', 'true', 'yes')
+    img_bytes, ss_time, status_str = services.get_browser_screenshot(force_fresh=force)
+    if img_bytes:
+        resp = Response(img_bytes, mimetype="image/png")
+        resp.headers['X-Screenshot-Time'] = str(ss_time)
+        resp.headers['X-Browser-Status'] = status_str
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return resp
+    return jsonify({"error": "Tarayıcı ekran görüntüsü alınamadı", "status": status_str}), 503
+
+
+@app.route('/api/browser/status', methods=['GET'])
+def browser_status():
+    return jsonify(services.get_browser_status())
+
+
 # ── IMAGE GENERATION ──────────────────────────────────────────────────────────
 
 @app.route('/api/generate/image', methods=['POST'])

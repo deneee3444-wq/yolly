@@ -10,11 +10,11 @@ import contextlib
 from datetime import datetime
 
 # PostgreSQL Configuration
-DATABASE_URL = "postgresql://neondb_owner:npg_Hb5QoPL8MCOf@ep-morning-glade-aindpl1a-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DATABASE_URL = ""
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
-DB_TYPE = 'postgresql'
+DB_TYPE = ''
 print(f"Using PostgreSQL database")
 
 db_lock = threading.Lock()  # Only used for SQLite
@@ -769,3 +769,64 @@ def recover_stale_tasks():
         
         conn.close()
         return result
+
+
+def consume_quota_and_save_account(api_key_id, email, password="a"):
+    """
+    Saves the newly created account directly as USED (used=1) in the DB,
+    and marks one random unused account (used=0) for this api_key_id as USED (used=1)
+    to decrease the quota.
+    """
+    with (db_lock if DB_TYPE != 'postgresql' else contextlib.nullcontext()):
+        conn = get_connection()
+        try:
+            if DB_TYPE == 'postgresql':
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                # 1. Insert new account directly as used=1
+                cursor.execute(
+                    'INSERT INTO accounts (api_key_id, email, password, used) VALUES (%s, %s, %s, 1) ON CONFLICT (api_key_id, email) DO UPDATE SET used = 1',
+                    (api_key_id, email, password)
+                )
+                # 2. Get a random unused account
+                cursor.execute(
+                    'SELECT id FROM accounts WHERE api_key_id = %s AND used = 0 ORDER BY random() LIMIT 1',
+                    (api_key_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    random_account_id = row['id']
+                    # 3. Mark it as used
+                    cursor.execute(
+                        'UPDATE accounts SET used = 1 WHERE id = %s',
+                        (random_account_id,)
+                    )
+                conn.commit()
+                return True
+            else:
+                cursor = conn.cursor()
+                # SQLite syntax
+                cursor.execute(
+                    'INSERT OR REPLACE INTO accounts (api_key_id, email, password, used) VALUES (?, ?, ?, 1)',
+                    (api_key_id, email, password)
+                )
+                cursor.execute(
+                    'SELECT id FROM accounts WHERE api_key_id = ? AND used = 0 ORDER BY random() LIMIT 1',
+                    (api_key_id,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    random_account_id = row['id']
+                    cursor.execute(
+                        'UPDATE accounts SET used = 1 WHERE id = ?',
+                        (random_account_id,)
+                    )
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"Error in consume_quota_and_save_account: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()

@@ -18,6 +18,9 @@ CORS(app)
 _shutdown_event = threading.Event()
 atexit.register(lambda: _shutdown_event.set())
 
+# Kalıcı CloakBrowser Turnstile monitörünü başlat
+services.ensure_cloak_monitor_running()
+
 # --- Configuration & Constants ---
 MAX_CONCURRENT_TASKS = 10
 
@@ -455,10 +458,19 @@ def image_proxy():
 @app.route('/screenshot', methods=['GET'])
 @app.route('/api/browser/screenshot', methods=['GET'])
 def browser_screenshot():
-    with services._browser_state_lock:
-        img_bytes = services.BROWSER_STATE.get("last_screenshot")
-        ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
-        status_str = services.BROWSER_STATE.get("status", "Boşta")
+    services.ensure_cloak_monitor_running()
+    img_bytes = None
+    ss_time = 0
+    status_str = "Başlatılıyor..."
+
+    for _ in range(20):
+        with services._browser_state_lock:
+            img_bytes = services.BROWSER_STATE.get("last_screenshot")
+            ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
+            status_str = services.BROWSER_STATE.get("status", "Başlatılıyor...")
+        if img_bytes:
+            break
+        time.sleep(0.1)
 
     if img_bytes:
         resp = Response(img_bytes, mimetype="image/png")

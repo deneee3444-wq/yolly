@@ -7,7 +7,7 @@ bind = "0.0.0.0:10000"
 
 def post_fork(server, worker):
     import threading
-    from service import resume_incomplete_tasks
+    from api import resume_incomplete_tasks
     
     def startup():
         import time

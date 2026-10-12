@@ -337,6 +337,13 @@ WEBSHARE_PROXIES = [
 PROFILE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "browser_profile_cloak")
 
 
+def clean_banner_text(text: str) -> str:
+    if not text:
+        return ""
+    tr_map = str.maketrans("ıİşŞğĞüÜöÖçÇ", "iIsSgGuUoOcC")
+    return str(text).translate(tr_map).encode("latin-1", "replace").decode("latin-1")
+
+
 def add_live_watermark(image_bytes: bytes, status_text: str = "", proxy_str: str = "") -> bytes:
     """
     Ekran görüntüsünün üst kısmına canlı saat, saniye ve durum damgası ekler.
@@ -353,7 +360,8 @@ def add_live_watermark(image_bytes: bytes, status_text: str = "", proxy_str: str
         now_str = datetime.now().strftime("%H:%M:%S")
 
         p_display = extract_ip(proxy_str) if proxy_str else "Direct"
-        text = f"CANLI [{now_str}] | {status_text} | Proxy: {p_display}"
+        raw_text = f"CANLI [{now_str}] | {status_text} | Proxy: {p_display}"
+        text = clean_banner_text(raw_text)
         draw.text((12, 8), text, fill=(52, 211, 153))
 
         img.paste(overlay, (0, 0))
@@ -417,13 +425,28 @@ def _try_click_turnstile_challenge(page):
         pass
 
 
+def generate_placeholder_image(text="Tarayıcı Başlatılıyor..."):
+    """İlk açılışta veya hazır değilken boşluk yerine canlı bilgi paneli döndürür."""
+    try:
+        img = Image.new("RGB", (1280, 720), (15, 23, 42))
+        draw = ImageDraw.Draw(img)
+        now_str = datetime.now().strftime("%H:%M:%S")
+        draw.text((30, 30), clean_banner_text(f"CANLI [{now_str}] | CloakBrowser Arka Plan Monitoru"), fill=(52, 211, 153))
+        draw.text((30, 70), clean_banner_text(str(text)), fill=(241, 245, 249))
+        out = io.BytesIO()
+        img.save(out, format="PNG")
+        return out.getvalue()
+    except Exception:
+        return b""
+
+
 BROWSER_STATE = {
     "is_active": True,
     "session_type": "persistent",
     "screenshot_requested": False,
     "reload_requested": False,
-    "last_screenshot": None,
-    "last_screenshot_time": 0,
+    "last_screenshot": generate_placeholder_image("Tarayıcı Başlatılıyor... Lütfen Bekleyin"),
+    "last_screenshot_time": time.time(),
     "status": "Tarayıcı başlatılıyor...",
     "token": None,
     "current_proxy": None,
@@ -584,13 +607,13 @@ def cloak_monitor():
                 if req_ss or (time.time() - last_ss_time >= 3.0):
                     try:
                         status_msg = BROWSER_STATE.get("status", "İzleniyor")
-                        raw_ss = page.screenshot()
+                        raw_ss = page.screenshot(timeout=5000)
                         ss = add_live_watermark(raw_ss, status_msg, current_proxy or "")
                         with _browser_state_lock:
                             BROWSER_STATE["last_screenshot"] = ss
                             BROWSER_STATE["last_screenshot_time"] = time.time()
                         last_ss_time = time.time()
-                    except Exception:
+                    except Exception as ss_err:
                         pass
 
                 # 3. Eğer token zaten yakalandıysa ve reload istenmediyse bekle
@@ -621,7 +644,7 @@ def cloak_monitor():
                         _token_ready_event.set()
 
                         try:
-                            raw_ss = page.screenshot()
+                            raw_ss = page.screenshot(timeout=5000)
                             ss = add_live_watermark(raw_ss, "✔ Turnstile Çözüldü!", current_proxy or "")
                             with _browser_state_lock:
                                 BROWSER_STATE["last_screenshot"] = ss
@@ -629,9 +652,9 @@ def cloak_monitor():
                         except Exception:
                             pass
                     else:
-                        # 60 saniyedir token çözülemediyse sayfayı otomatik reload et
-                        if time.time() - page_load_time > 60:
-                            print("[*] 60 saniyedir token alınamadı, sayfa otomatik yenileniyor...", flush=True)
+                        # 5 dakika (300 saniye) boyunca token çözülemediyse sayfayı yenile
+                        if time.time() - page_load_time > 300:
+                            print("[*] 5 dakikadır token alınamadı, sayfa yenileniyor...", flush=True)
                             with _browser_state_lock:
                                 BROWSER_STATE["reload_requested"] = True
                             page_load_time = time.time()

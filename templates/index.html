@@ -1505,13 +1505,6 @@
                 <span class="nav-label">Task Durumu</span>
             </a>
 
-            <div class="nav-section-label">İzleme & Araçlar</div>
-
-            <a class="nav-item" id="nav-browser" onclick="showPage('page-browser', this)">
-                <span class="nav-icon">🖥️</span>
-                <span class="nav-label">Tarayıcı Ekranı</span>
-            </a>
-
             <div class="nav-section-label">Döküman</div>
 
             <a class="nav-item" href="/api-doc" target="_blank">
@@ -2022,56 +2015,6 @@
                 </div>
             </div>
 
-            <!-- ─── PAGE: BROWSER SCREENSHOT ─── -->
-            <div class="page" id="page-browser">
-                <div class="page-header">
-                    <div class="page-eyebrow">Canlı İzleme</div>
-                    <div class="page-title">Tarayıcı <span>Ekranı</span></div>
-                    <div class="page-desc">CloakBrowser / Cloudflare Turnstile arka plan tarayıcısının anlık görüntüsü</div>
-                </div>
-
-                <div class="card">
-                    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span>🖥️ Canlı Tarayıcı Görünümü</span>
-                            <span id="browserStatusBadge" class="badge" style="font-size:0.75rem; padding:4px 12px; border-radius:99px; background:var(--violet-dim); color:var(--violet); border:1px solid var(--border-bright);">Durum Kontrol Ediliyor...</span>
-                        </div>
-                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                            <span id="browserSsTime" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:var(--text-muted);"></span>
-                            <button class="btn-secondary" style="padding:9px 16px; font-size:0.85rem;" onclick="checkBrowserStatus(true)">🔄 Durumu Yenile</button>
-                            <button id="btnTakeScreenshot" style="padding:9px 22px; font-size:0.85rem;" onclick="takeBrowserScreenshot()">📸 Anlık SS Al</button>
-                        </div>
-                    </div>
-
-                    <!-- Screenshot Container -->
-                    <div id="browserScreenshotContainer" style="margin-top:1.25rem; background:var(--void); border:1px solid var(--border); border-radius:var(--radius); min-height:440px; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; position:relative; box-shadow:inset 0 0 40px rgba(0,0,0,0.8);">
-                        <div id="browserScreenshotPlaceholder" style="text-align:center; padding:50px 20px; color:var(--text-dim);">
-                            <div style="font-size:3.5rem; margin-bottom:14px; opacity:0.6;">🖥️</div>
-                            <div style="font-size:1.05rem; font-weight:600; color:var(--text); margin-bottom:8px;">Tarayıcı Ekranı Hazır</div>
-                            <div style="font-size:0.82rem; color:var(--text-muted); max-width:440px; line-height:1.5;">
-                                Turnstile çözülürken veya istek atılırken arka plandaki CloakBrowser ekranını canlı görebilir veya hemen yeni bir ekran görüntüsü almak için <b>"📸 Anlık SS Al"</b> butonuna basabilirsiniz.
-                            </div>
-                        </div>
-                        <div id="browserScreenshotLoading" style="display:none; text-align:center; padding:50px 20px;">
-                            <div class="loading" style="margin:0 auto 16px; width:36px; height:36px; border-width:3px;"></div>
-                            <div id="browserLoadingText" style="font-size:1rem; font-weight:600; color:var(--text);">📸 Ekran görüntüsü alınıyor...</div>
-                            <div id="browserLoadingSubtext" style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">CloakBrowser arka planda çalışıyor, lütfen bekleyin...</div>
-                        </div>
-                        <img id="browserScreenshotImg" src="" alt="Tarayıcı Ekran Görüntüsü" style="display:none; width:100%; height:auto; border-radius:var(--radius-sm); object-fit:contain;" />
-                    </div>
-
-                    <div style="margin-top:1.25rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:0.8rem; color:var(--text-muted); padding-top:1rem; border-top:1px solid var(--border);">
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <span style="color:var(--cyan);">ℹ️</span>
-                            <span>Tarayıcı, Webshare proxy (<code>p.webshare.io:80</code>) ve CloakBrowser stealth modu ile çalışmaktadır.</span>
-                        </div>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn-secondary" style="padding:6px 14px; font-size:0.75rem;" onclick="openScreenshotInNewTab()">🔗 Tam Boyut Sekmede Aç</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
         </main>
     </div>
 
@@ -2084,7 +2027,6 @@
             'page-quota':    'Quota Kontrolü',
             'page-generate': 'İçerik Oluşturma',
             'page-tasks':    'Task Durumu',
-            'page-browser':  'Tarayıcı Ekranı',
         };
 
         function showPage(pageId, navEl) {
@@ -2094,9 +2036,6 @@
             if (navEl) navEl.classList.add('active');
             document.getElementById('topbarPageTitle').textContent = PAGE_TITLES[pageId] || '';
             closeSidebar();
-            if (pageId === 'page-browser') {
-                checkBrowserStatus();
-            }
         }
 
         function toggleSidebar() {
@@ -3486,165 +3425,6 @@
                 displayResponseWithReadable('ttsResponse', 'ttsReadable', data, !res.ok, 'task');
             } catch(e) {
                 displayResponseWithReadable('ttsResponse', 'ttsReadable', { error: e.message }, true, 'task');
-            }
-        }
-
-        /* ══════════════════════════════════════
-           BROWSER SCREENSHOT & MONITORING
-        ══════════════════════════════════════ */
-        let currentScreenshotUrl = '';
-
-        async function checkBrowserStatus(showNotification = false) {
-            const badge = document.getElementById('browserStatusBadge');
-            try {
-                const res = await fetch(`${API_BASE()}/api/browser/status?t=${Date.now()}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.is_active) {
-                        badge.style.background = 'var(--emerald-dim)';
-                        badge.style.color = 'var(--emerald)';
-                        badge.style.borderColor = 'var(--emerald)';
-                        const prefix = data.session_type === 'test' ? '🧪 Test' : '🟢 Normal İşlem';
-                        badge.textContent = `${prefix}: ${data.status}`;
-                    } else {
-                        badge.style.background = 'var(--violet-dim)';
-                        badge.style.color = 'var(--violet)';
-                        badge.style.borderColor = 'var(--border-bright)';
-                        badge.textContent = `⚪ ${data.status || 'Boşta'}`;
-                    }
-
-                    if (data.has_screenshot && (!currentScreenshotUrl || forceRefresh)) {
-                        loadExistingScreenshot();
-                    }
-                }
-            } catch (e) {
-                if (badge) badge.textContent = 'Durum bilinmiyor';
-            }
-        }
-
-        async function loadExistingScreenshot() {
-            const placeholder = document.getElementById('browserScreenshotPlaceholder');
-            const loading = document.getElementById('browserScreenshotLoading');
-            const img = document.getElementById('browserScreenshotImg');
-            const timeEl = document.getElementById('browserSsTime');
-
-            const url = `${API_BASE()}/screenshot?t=${Date.now()}`;
-            const testImg = new Image();
-            testImg.onload = () => {
-                currentScreenshotUrl = url;
-                img.src = url;
-                img.style.display = 'block';
-                if (placeholder) placeholder.style.display = 'none';
-                if (loading) loading.style.display = 'none';
-                const now = new Date();
-                if (timeEl) timeEl.textContent = `Son Kayıt: ${now.toLocaleTimeString()}`;
-            };
-            testImg.onerror = () => {
-                if (loading) loading.style.display = 'none';
-            };
-            testImg.src = url;
-        }
-
-        let browserPollInterval = null;
-
-        async function takeBrowserScreenshot() {
-            const placeholder = document.getElementById('browserScreenshotPlaceholder');
-            const loading = document.getElementById('browserScreenshotLoading');
-            const loadingText = document.getElementById('browserLoadingText');
-            const loadingSubtext = document.getElementById('browserLoadingSubtext');
-            const img = document.getElementById('browserScreenshotImg');
-            const btn = document.getElementById('btnTakeScreenshot');
-            const badge = document.getElementById('browserStatusBadge');
-            const timeEl = document.getElementById('browserSsTime');
-
-            if (btn) btn.disabled = true;
-            if (placeholder) placeholder.style.display = 'none';
-            if (loading) loading.style.display = 'block';
-            if (loadingText) loadingText.textContent = '📸 Ekran görüntüsü alınıyor...';
-            if (loadingSubtext) loadingSubtext.textContent = 'Canlı görüntü bekleniyor...';
-
-            const url = `${API_BASE()}/screenshot?t=${Date.now()}`;
-            const testImg = new Image();
-            testImg.onload = () => {
-                currentScreenshotUrl = url;
-                img.src = url;
-                img.style.display = 'block';
-                if (loading) loading.style.display = 'none';
-                if (placeholder) placeholder.style.display = 'none';
-                if (btn) btn.disabled = false;
-                const now = new Date();
-                if (timeEl) timeEl.textContent = `Çekildi: ${now.toLocaleTimeString()}`;
-                if (badge) {
-                    badge.style.background = 'var(--emerald-dim)';
-                    badge.style.color = 'var(--emerald)';
-                    badge.textContent = '✅ Canlı Görüntü Alındı';
-                }
-            };
-            testImg.onerror = () => {
-                showScreenshotError('Ekran görüntüsü henüz hazır değil, tekrar deneyin.');
-                if (btn) btn.disabled = false;
-            };
-            testImg.src = url;
-        }
-
-        function renderScreenshotImage(ts) {
-            const loading = document.getElementById('browserScreenshotLoading');
-            const placeholder = document.getElementById('browserScreenshotPlaceholder');
-            const img = document.getElementById('browserScreenshotImg');
-            const timeEl = document.getElementById('browserSsTime');
-            const badge = document.getElementById('browserStatusBadge');
-
-            const url = `${API_BASE()}/screenshot?t=${ts || Date.now()}`;
-            currentScreenshotUrl = url;
-
-            const testImg = new Image();
-            testImg.onload = () => {
-                img.src = url;
-                img.style.display = 'block';
-                if (loading) loading.style.display = 'none';
-                if (placeholder) placeholder.style.display = 'none';
-                const now = new Date();
-                if (timeEl) timeEl.textContent = `Çekildi: ${now.toLocaleTimeString()}`;
-                if (badge) {
-                    badge.style.background = 'var(--emerald-dim)';
-                    badge.style.color = 'var(--emerald)';
-                    badge.textContent = '✅ Görüntü Güncellendi';
-                }
-            };
-            testImg.onerror = () => {
-                showScreenshotError('Görüntü yüklenirken hata oluştu.');
-            };
-            testImg.src = url;
-        }
-
-        function showScreenshotError(msg) {
-            const loading = document.getElementById('browserScreenshotLoading');
-            const placeholder = document.getElementById('browserScreenshotPlaceholder');
-            const badge = document.getElementById('browserStatusBadge');
-
-            if (loading) loading.style.display = 'none';
-            if (placeholder) {
-                placeholder.style.display = 'block';
-                placeholder.innerHTML = `
-                    <div style="font-size:3rem; margin-bottom:12px; color:var(--rose);">❌</div>
-                    <div style="font-size:1rem; font-weight:600; color:var(--rose); margin-bottom:6px;">Ekran Görüntüsü Alınamadı</div>
-                    <div style="font-size:0.8rem; color:var(--text-muted); max-width:400px;">
-                        ${msg || 'Tarayıcı başlatılamadı veya zaman aşımına uğradı.'}
-                    </div>
-                `;
-            }
-            if (badge) {
-                badge.style.background = 'var(--rose-dim)';
-                badge.style.color = 'var(--rose)';
-                badge.textContent = '❌ Hata';
-            }
-        }
-
-        function openScreenshotInNewTab() {
-            if (currentScreenshotUrl) {
-                window.open(currentScreenshotUrl, '_blank');
-            } else {
-                window.open(`${API_BASE()}/screenshot?t=${Date.now()}`, '_blank');
             }
         }
 

@@ -18,9 +18,6 @@ CORS(app)
 _shutdown_event = threading.Event()
 atexit.register(lambda: _shutdown_event.set())
 
-# Kalıcı CloakBrowser Turnstile monitörünü başlat
-services.ensure_cloak_monitor_running()
-
 # --- Configuration & Constants ---
 MAX_CONCURRENT_TASKS = 10
 
@@ -453,53 +450,6 @@ def image_proxy():
     resp_headers = [(k, v) for k, v in r.headers.items() if k.lower() not in excluded]
 
     return Response(r.iter_content(chunk_size=8192), status=r.status_code, headers=resp_headers)
-
-
-@app.route('/screenshot', methods=['GET'])
-@app.route('/api/browser/screenshot', methods=['GET'])
-def browser_screenshot():
-    services.ensure_cloak_monitor_running()
-
-    # app.py mimarisi: /screenshot çağrıldığında anlık taze görüntü talep et
-    with services._browser_state_lock:
-        services.BROWSER_STATE["screenshot_requested"] = True
-
-    # Arka plan tarayıcısının yeni kareyi alması için 1.5 saniyeye kadar bekle
-    for _ in range(15):
-        time.sleep(0.1)
-        with services._browser_state_lock:
-            if not services.BROWSER_STATE.get("screenshot_requested") and services.BROWSER_STATE.get("last_screenshot"):
-                break
-
-    with services._browser_state_lock:
-        img_bytes = services.BROWSER_STATE.get("last_screenshot")
-        ss_time = services.BROWSER_STATE.get("last_screenshot_time", 0)
-        status_str = services.BROWSER_STATE.get("status", "Başlatılıyor...")
-
-    if not img_bytes:
-        img_bytes = services.generate_placeholder_image(f"Tarayıcı Hazırlanıyor: {status_str}")
-        ss_time = time.time()
-
-    resp = Response(img_bytes, mimetype="image/png")
-    resp.headers['X-Screenshot-Time'] = str(ss_time)
-    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    return resp
-
-
-@app.route('/api/browser/capture', methods=['POST', 'GET'])
-def browser_capture():
-    status_code, message = services.trigger_browser_capture()
-    return jsonify({
-        "ok": True,
-        "status": status_code,
-        "message": message,
-        "browser_status": services.get_browser_status()
-    })
-
-
-@app.route('/api/browser/status', methods=['GET'])
-def browser_status():
-    return jsonify(services.get_browser_status())
 
 
 # ── IMAGE GENERATION ──────────────────────────────────────────────────────────

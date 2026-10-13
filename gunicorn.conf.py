@@ -1,9 +1,7 @@
 # gunicorn.conf.py
 import database as db
-import services
 workers = 1
-threads = 8
-preload_app = False
+preload_app = True
 timeout = 600
 bind = "0.0.0.0:10000"
 
@@ -13,10 +11,7 @@ def post_fork(server, worker):
     
     def startup():
         import time
-        # Kalıcı CloakBrowser Turnstile arka plan monitörünü başlat
-        services.ensure_cloak_monitor_running()
-        
-        max_wait = 300  # DB için max 5 dakika bekle
+        max_wait = 300  # DB için max 2 dakika bekle
         start = time.time()
         while time.time() - start < max_wait:
             try:

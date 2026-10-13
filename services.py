@@ -9,6 +9,8 @@ Supported:
   - Image: Nano Banana, Nano Banana Pro, Nano Banana 2, GPT-Image 2
 """
 
+import os
+import sys
 import random
 import time
 import requests
@@ -18,12 +20,166 @@ import base64
 import json
 import threading
 import queue as _queue
-import os
-import io
-from datetime import datetime
-from PIL import Image, ImageDraw
 from concurrent.futures import ThreadPoolExecutor
-from cloakbrowser import launch, launch_persistent_context
+
+import atexit
+from cloakbrowser import launch_persistent_context
+
+DEFAULT_TARGET_URL = "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite"
+DEFAULT_PROXY = "http://tghpxuwn:dxrsnpsyz3df@45.38.107.97:6014"
+PROXY = os.environ.get("PROXY", DEFAULT_PROXY)
+PROFILE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "browser_profile")
+os.makedirs(PROFILE_DIR, exist_ok=True)
+
+
+class TurnstileBrowserWorker:
+    """Arka planda tek bir CloakBrowser oturumu tutan ve
+    istek geldikce Turnstile tokeni cozen yonetici sinifi.
+    """
+
+    def __init__(self, proxy=PROXY, profile_dir=PROFILE_DIR):
+        self.proxy = proxy
+        self.profile_dir = profile_dir
+        self.task_queue = _queue.Queue()
+        self.ready_event = threading.Event()
+        self.running = True
+        self.context = None
+        self.page = None
+        self._lock = threading.Lock()
+        self.worker_thread = None
+        self._ensure_running()
+
+    def _ensure_running(self):
+        with self._lock:
+            if not self.worker_thread or not self.worker_thread.is_alive():
+                self.running = True
+                self.ready_event = threading.Event()
+                self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+                self.worker_thread.start()
+
+    def _init_browser(self):
+        print(f"[+] CloakBrowser (headless) baslatiliyor (Proxy: {self.proxy})...")
+        self.context = launch_persistent_context(
+            user_data_dir=self.profile_dir,
+            headless=True,
+            proxy=self.proxy,
+            humanize=True,
+            stealth_args=True,
+            args=[
+                "--disable-infobars",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--window-size=1920,1080",
+            ],
+        )
+        self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        print("[+] CloakBrowser hazir ve beklemede.")
+
+    def _worker_loop(self):
+        try:
+            self._init_browser()
+            self.ready_event.set()
+        except Exception as e:
+            print(f"[!] Browser baslatilamadi: {e}")
+            self.ready_event.set()
+
+        while self.running:
+            item = self.task_queue.get()
+            if item is None:
+                break
+
+            target_url, timeout, res_queue = item
+            token = None
+
+            try:
+                if not self.context or not self.page:
+                    self._init_browser()
+
+                print(f"[+] Hedef adrese gidiliyor: {target_url}")
+                self.page.goto(target_url, wait_until="domcontentloaded")
+                print("[+] Sayfa yuklendi. Turnstile kontrol ediliyor...")
+
+                start_time = time.time()
+                while time.time() - start_time < timeout:
+                    # 1. Onceden uretilmis token var mi kontrol et
+                    try:
+                        val = self.page.evaluate("() => document.querySelector('[name=\"cf-turnstile-response\"]')?.value")
+                        if val and len(val) > 20:
+                            token = val
+                            break
+                    except Exception:
+                        pass
+
+                    for frame in self.page.frames:
+                        try:
+                            el = frame.query_selector('[name="cf-turnstile-response"]')
+                            if el:
+                                val = el.input_value() or el.get_attribute("value")
+                                if val and len(val) > 20:
+                                    token = val
+                                    break
+                        except Exception:
+                            pass
+
+                    if token:
+                        break
+
+                    # 2. Cloudflare alani gorunduyse tikla
+                    for frame in self.page.frames:
+                        if "challenges.cloudflare.com" in frame.url:
+                            try:
+                                frame.locator("body").click(timeout=1500)
+                                print("[+] Cloudflare kutucuguna tiklandi.")
+                                break
+                            except Exception:
+                                pass
+
+                    time.sleep(1)
+
+            except Exception as e:
+                print(f"\n[!] Bir hata olustu: {e}\n")
+                try:
+                    if self.context:
+                        self.context.close()
+                except Exception:
+                    pass
+                self.context = None
+                self.page = None
+
+            res_queue.put(token)
+            self.task_queue.task_done()
+
+        if self.context:
+            try:
+                self.context.close()
+            except Exception:
+                pass
+            self.context = None
+
+    def get_token(self, target_url=DEFAULT_TARGET_URL, timeout=300):
+        self._ensure_running()
+        self.ready_event.wait(timeout=30)
+        res_queue = _queue.Queue()
+        self.task_queue.put((target_url, timeout, res_queue))
+        try:
+            return res_queue.get(timeout=timeout + 15)
+        except _queue.Empty:
+            return None
+
+    def close(self):
+        self.running = False
+        self.task_queue.put(None)
+
+
+_turnstile_worker = TurnstileBrowserWorker()
+
+
+def get_turnstile_token(target_url=DEFAULT_TARGET_URL, timeout=300):
+    """Hedef adrese gidip Cloudflare Turnstile tokenini alip dondurur (varsayilan 300s / 5 dk)."""
+    return _turnstile_worker.get_token(target_url=target_url, timeout=timeout)
+
+
+atexit.register(lambda: _turnstile_worker.close())
 
 VERIFY_BLACKLIST = set()
 blacklist_lock = threading.Lock()
@@ -318,406 +474,6 @@ def deserialize_session_data(json_str):
     return session, data
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# BROWSER SCREENSHOT & MONITORING STATE
-# ══════════════════════════════════════════════════════════════════════════════
-WEBSHARE_PROXIES = [
-    "http://tghpxuwn:dxrsnpsyz3df@64.137.10.153:5803",
-    "http://tghpxuwn:dxrsnpsyz3df@45.38.107.97:6014",
-    "http://tghpxuwn:dxrsnpsyz3df@64.137.96.74:6641",
-    "http://tghpxuwn:dxrsnpsyz3df@84.247.60.125:6095",
-    "http://tghpxuwn:dxrsnpsyz3df@38.154.185.97:6370",
-    "http://tghpxuwn:dxrsnpsyz3df@198.23.243.226:6361",
-    "http://tghpxuwn:dxrsnpsyz3df@104.164.49.38:7693",
-    "http://tghpxuwn:dxrsnpsyz3df@198.46.161.42:5092",
-    "http://tghpxuwn:dxrsnpsyz3df@191.96.254.138:6185",
-    "http://tghpxuwn:dxrsnpsyz3df@23.26.71.145:5628",
-]
-
-PROFILE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "browser_profile_cloak")
-
-
-def clean_banner_text(text: str) -> str:
-    if not text:
-        return ""
-    tr_map = str.maketrans("ıİşŞğĞüÜöÖçÇ", "iIsSgGuUoOcC")
-    return str(text).translate(tr_map).encode("latin-1", "replace").decode("latin-1")
-
-
-def add_live_watermark(image_bytes: bytes, status_text: str = "", proxy_str: str = "") -> bytes:
-    """
-    Ekran görüntüsünün üst kısmına canlı saat, saniye ve durum damgası ekler.
-    Kullanıcının görüntünün anlık olarak yenilendiğini görmesini kesinleştirir.
-    """
-    if not image_bytes:
-        return image_bytes
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        width, height = img.size
-        banner_h = 32
-        overlay = Image.new("RGBA", (width, banner_h), (15, 23, 42, 235))
-        draw = ImageDraw.Draw(overlay)
-        now_str = datetime.now().strftime("%H:%M:%S")
-
-        p_display = extract_ip(proxy_str) if proxy_str else "Direct"
-        raw_text = f"CANLI [{now_str}] | {status_text} | Proxy: {p_display}"
-        text = clean_banner_text(raw_text)
-        draw.text((12, 8), text, fill=(52, 211, 153))
-
-        img.paste(overlay, (0, 0))
-        out = io.BytesIO()
-        img.save(out, format="PNG")
-        return out.getvalue()
-    except Exception:
-        return image_bytes
-
-
-TARGET = "https://www.yolly.ai"
-SIGNIN_URL = TARGET + "/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite"
-
-
-def _extract_turnstile_token(page):
-    """
-    Cloudflare Turnstile token'ını doğrudan DOM üzerinden çeker.
-    """
-    try:
-        val = page.evaluate("() => document.querySelector('[name=\"cf-turnstile-response\"]')?.value")
-        if val and len(val) > 20:
-            return val
-    except Exception:
-        pass
-
-    try:
-        for f in page.frames:
-            try:
-                val = f.evaluate("() => document.querySelector('[name=\"cf-turnstile-response\"]')?.value")
-                if val and len(val) > 20:
-                    return val
-            except Exception:
-                pass
-            try:
-                el = f.query_selector("[name='cf-turnstile-response']")
-                if el:
-                    v = el.input_value() or el.get_attribute("value")
-                    if v and len(v) > 20:
-                        return v
-            except Exception:
-                pass
-    except Exception:
-        pass
-    return None
-
-
-def _try_click_turnstile_challenge(page):
-    """Eğer Cloudflare kutucuğu varsa tıklar."""
-    try:
-        for f in page.frames:
-            if "challenges.cloudflare.com" in f.url:
-                for sel in ["input[type='checkbox']", "#challenge-stage", ".ctp-checkbox-label", "body"]:
-                    try:
-                        el = f.query_selector(sel)
-                        if el:
-                            el.click(timeout=600)
-                            break
-                    except Exception:
-                        pass
-    except Exception:
-        pass
-
-
-def generate_placeholder_image(text="Tarayıcı Başlatılıyor..."):
-    """İlk açılışta veya hazır değilken boşluk yerine canlı bilgi paneli döndürür."""
-    try:
-        img = Image.new("RGB", (1280, 720), (15, 23, 42))
-        draw = ImageDraw.Draw(img)
-        now_str = datetime.now().strftime("%H:%M:%S")
-        draw.text((30, 30), clean_banner_text(f"CANLI [{now_str}] | CloakBrowser Arka Plan Monitoru"), fill=(52, 211, 153))
-        draw.text((30, 70), clean_banner_text(str(text)), fill=(241, 245, 249))
-        out = io.BytesIO()
-        img.save(out, format="PNG")
-        return out.getvalue()
-    except Exception:
-        return b""
-
-
-BROWSER_STATE = {
-    "is_active": True,
-    "session_type": "persistent",
-    "screenshot_requested": False,
-    "reload_requested": False,
-    "last_screenshot": generate_placeholder_image("Tarayıcı Başlatılıyor... Lütfen Bekleyin"),
-    "last_screenshot_time": time.time(),
-    "status": "Tarayıcı başlatılıyor...",
-    "token": None,
-    "current_proxy": None,
-    "page_ref": None,
-    "context_ref": None,
-}
-_browser_state_lock = threading.Lock()
-_token_ready_event = threading.Event()
-_monitor_thread_started = False
-_monitor_thread_lock = threading.Lock()
-
-
-def get_browser_status():
-    ensure_cloak_monitor_running()
-    with _browser_state_lock:
-        return {
-            "is_active": BROWSER_STATE.get("is_active", True),
-            "session_type": BROWSER_STATE.get("session_type", "persistent"),
-            "status": BROWSER_STATE.get("status", "Başlatılıyor..."),
-            "has_screenshot": BROWSER_STATE.get("last_screenshot") is not None,
-            "last_screenshot_time": BROWSER_STATE.get("last_screenshot_time", 0),
-            "token": BROWSER_STATE.get("token"),
-            "proxy": extract_ip(BROWSER_STATE.get("current_proxy")) if BROWSER_STATE.get("current_proxy") else "Direct",
-        }
-
-
-def trigger_browser_capture():
-    """
-    Açık olan kalıcı tarayıcıdan anında canlı görüntü talep eder ve güncellenmesini bekler.
-    """
-    ensure_cloak_monitor_running()
-    with _browser_state_lock:
-        BROWSER_STATE["screenshot_requested"] = True
-    # Anlık ekran görüntüsünün güncellenmesi için 1.5 saniyeye kadar bekle
-    for _ in range(15):
-        time.sleep(0.1)
-        with _browser_state_lock:
-            if not BROWSER_STATE.get("screenshot_requested") and BROWSER_STATE.get("last_screenshot"):
-                break
-    return "active_session", "Kalıcı tarayıcıdan güncel ekran görüntüsü alındı."
-
-
-def cloak_monitor():
-    """
-    app.py mimarisi: Arka planda kalıcı (persistent) CloakBrowser tarayıcısını 7/24 açık tutar.
-    Yolly giriş sayfasında Cloudflare Turnstile token'ını önceden çözer ve bellekte hazır bekletir.
-    Token kullanıldığında sayfayı otomatik reload ederek hemen bir sonraki token'ı önceden çözer.
-    """
-    global BROWSER_STATE
-    os.makedirs(PROFILE_DIR, exist_ok=True)
-
-    candidate_proxies = []
-    env_p = os.environ.get("CLOAK_PROXY") or os.environ.get("PROXY")
-    if env_p and env_p.strip():
-        candidate_proxies.append(env_p.strip())
-
-    ws_copy = [p for p in WEBSHARE_PROXIES if p and p.strip()]
-    random.shuffle(ws_copy)
-    candidate_proxies.extend(ws_copy)
-    candidate_proxies.append(None)  # En son proxysiz doğrudan deneme hakkı
-
-    proxy_idx = 0
-
-    while True:
-        current_proxy = candidate_proxies[proxy_idx % len(candidate_proxies)]
-        proxy_display = extract_ip(current_proxy) if current_proxy else "Doğrudan"
-
-        with _browser_state_lock:
-            BROWSER_STATE["is_active"] = True
-            BROWSER_STATE["session_type"] = "persistent"
-            BROWSER_STATE["current_proxy"] = current_proxy
-            BROWSER_STATE["status"] = f"CloakBrowser başlatılıyor ({proxy_display})..."
-
-        print(f"[*] CloakBrowser kalıcı monitörü başlatılıyor (Proxy: {proxy_display})...", flush=True)
-
-        context = None
-        try:
-            kwargs = {
-                "user_data_dir": PROFILE_DIR,
-                "headless": True,
-                "humanize": True,
-                "stealth_args": True,
-                "args": [
-                    "--disable-infobars",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--window-size=1920,1080",
-                ],
-            }
-            if current_proxy:
-                kwargs["proxy"] = current_proxy
-
-            try:
-                context = launch_persistent_context(**kwargs)
-            except Exception as e:
-                print(f"[!] Persistent context hatası ({e}), launch() deneniyor...", flush=True)
-                if "user_data_dir" in kwargs:
-                    del kwargs["user_data_dir"]
-                context = launch(**kwargs)
-
-            with _browser_state_lock:
-                BROWSER_STATE["context_ref"] = context
-
-            page = context.pages[0] if hasattr(context, "pages") and context.pages else context.new_page()
-            with _browser_state_lock:
-                BROWSER_STATE["page_ref"] = page
-                BROWSER_STATE["status"] = f"Giriş sayfasına gidiliyor ({proxy_display})..."
-
-            print(f"[*] CloakBrowser giriş sayfasına gidiyor: {SIGNIN_URL}...", flush=True)
-            page.goto(SIGNIN_URL, wait_until="domcontentloaded", timeout=30000)
-
-            with _browser_state_lock:
-                BROWSER_STATE["status"] = f"Sayfa açık ({proxy_display}), Turnstile bekleniyor..."
-
-            # İlk ekran görüntüsünü al
-            try:
-                raw_ss = page.screenshot()
-                ss = add_live_watermark(raw_ss, "Giriş Sayfası Açıldı", current_proxy or "")
-                with _browser_state_lock:
-                    BROWSER_STATE["last_screenshot"] = ss
-                    BROWSER_STATE["last_screenshot_time"] = time.time()
-            except Exception:
-                pass
-
-            last_ss_time = time.time()
-            page_load_time = time.time()
-
-            # Ana döngü - 7/24 kalıcı olarak çalışır
-            while True:
-                time.sleep(1.0)
-
-                # 1. Sayfa yenileme isteği varsa reload et
-                should_reload = False
-                with _browser_state_lock:
-                    if BROWSER_STATE.get("reload_requested"):
-                        should_reload = True
-                        BROWSER_STATE["reload_requested"] = False
-
-                if should_reload:
-                    print("[*] Yeni Turnstile token için sayfa yenileniyor (reload)...", flush=True)
-                    with _browser_state_lock:
-                        BROWSER_STATE["status"] = "Sayfa yenileniyor..."
-                    try:
-                        page.reload(wait_until="domcontentloaded", timeout=25000)
-                        page_load_time = time.time()
-                        with _browser_state_lock:
-                            BROWSER_STATE["status"] = f"Sayfa yenilendi ({proxy_display}), Turnstile bekleniyor..."
-                    except Exception as e:
-                        print(f"[!] Sayfa reload hatası: {e}", flush=True)
-
-                # 2. Ekran görüntüsü istendiyse veya 3 saniyede bir otomatik güncelle
-                req_ss = False
-                with _browser_state_lock:
-                    if BROWSER_STATE.get("screenshot_requested"):
-                        req_ss = True
-                        BROWSER_STATE["screenshot_requested"] = False
-
-                if req_ss or (time.time() - last_ss_time >= 3.0):
-                    try:
-                        status_msg = BROWSER_STATE.get("status", "İzleniyor")
-                        raw_ss = page.screenshot(timeout=5000)
-                        ss = add_live_watermark(raw_ss, status_msg, current_proxy or "")
-                        with _browser_state_lock:
-                            BROWSER_STATE["last_screenshot"] = ss
-                            BROWSER_STATE["last_screenshot_time"] = time.time()
-                        last_ss_time = time.time()
-                    except Exception as ss_err:
-                        pass
-
-                # 3. Eğer token zaten yakalandıysa ve reload istenmediyse bekle
-                with _browser_state_lock:
-                    has_token = bool(BROWSER_STATE.get("token"))
-                if has_token:
-                    continue
-
-                # 4. Turnstile token kontrolü
-                try:
-                    _try_click_turnstile_challenge(page)
-                    found = _extract_turnstile_token(page)
-                    if not found and hasattr(context, "pages"):
-                        for p in context.pages:
-                            if not p.is_closed():
-                                found = _extract_turnstile_token(p)
-                                if found:
-                                    break
-
-                    if found:
-                        print("\n" + "="*60, flush=True)
-                        print(f"[SUCCESS] CLOAKBROWSER TURNSTILE TOKEN YAKALANDI VE HAZIR:", flush=True)
-                        print(found, flush=True)
-                        print("="*60 + "\n", flush=True)
-                        with _browser_state_lock:
-                            BROWSER_STATE["token"] = found
-                            BROWSER_STATE["status"] = "✔ Turnstile token hazır"
-                        _token_ready_event.set()
-
-                        try:
-                            raw_ss = page.screenshot(timeout=5000)
-                            ss = add_live_watermark(raw_ss, "✔ Turnstile Çözüldü!", current_proxy or "")
-                            with _browser_state_lock:
-                                BROWSER_STATE["last_screenshot"] = ss
-                                BROWSER_STATE["last_screenshot_time"] = time.time()
-                        except Exception:
-                            pass
-                    else:
-                        # 5 dakika (300 saniye) boyunca token çözülemediyse sayfayı yenile
-                        if time.time() - page_load_time > 300:
-                            print("[*] 5 dakikadır token alınamadı, sayfa yenileniyor...", flush=True)
-                            with _browser_state_lock:
-                                BROWSER_STATE["reload_requested"] = True
-                            page_load_time = time.time()
-                except Exception as e:
-                    print(f"[!] Turnstile kontrol döngüsü hatası: {e}", flush=True)
-
-        except Exception as e:
-            print(f"[!] CloakBrowser monitor hatası ({proxy_display}): {e}", flush=True)
-            with _browser_state_lock:
-                BROWSER_STATE["status"] = f"Bağlantı hatası: {e}. Sonraki proxy deneniyor..."
-            proxy_idx += 1
-            time.sleep(3.0)
-        finally:
-            if context:
-                try:
-                    context.close()
-                except Exception:
-                    pass
-            with _browser_state_lock:
-                BROWSER_STATE["page_ref"] = None
-                BROWSER_STATE["context_ref"] = None
-            time.sleep(2.0)
-
-
-def ensure_cloak_monitor_running():
-    """
-    CloakBrowser kalıcı arka plan monitörünün çalışmasını sağlar (idempotent).
-    """
-    global _monitor_thread_started
-    with _monitor_thread_lock:
-        if not _monitor_thread_started:
-            _monitor_thread_started = True
-            t = threading.Thread(target=cloak_monitor, daemon=True, name="CloakMonitorThread")
-            t.start()
-            print("[*] CloakBrowser arka plan kalıcı (persistent) monitörü başlatıldı.", flush=True)
-
-
-def get_yolly_turnstile_token(timeout: int = 300) -> str | None:
-    """
-    Arka planda önceden çözülüp bekletilen Turnstile token'ını anında teslim eder (0 saniye gecikme).
-    Token teslim edildikten sonra arka plan monitörüne otomatik reload sinyali gönderir,
-    böylece bir sonraki işlem için token önceden hazır tutulur.
-    """
-    ensure_cloak_monitor_running()
-    print("[*] Cloudflare Turnstile token talep ediliyor (önceden çözülmüş token aranıyor)...", flush=True)
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        with _browser_state_lock:
-            token = BROWSER_STATE.get("token")
-            if token:
-                # Token'ı anında teslim et, belleği boşalt ve bir sonraki için yenileme isteği ilet
-                BROWSER_STATE["token"] = None
-                BROWSER_STATE["reload_requested"] = True
-                _token_ready_event.clear()
-                print(f"[+] Turnstile token anında sağlandı: {token[:35]}...", flush=True)
-                return token
-        _token_ready_event.wait(timeout=0.5)
-
-    print("[-] Turnstile token bekleme zaman aşımına uğradı!", flush=True)
-    return None
-
-
-
 def login_yolly(email, password=None):
     """Login to Yolly AI using email verification code.
     Password parameter is ignored (Yolly uses email-only verification).
@@ -727,16 +483,9 @@ def login_yolly(email, password=None):
     """
     session = make_yolly_session()
 
+    # 1) Find proxy for send-code
     print(f"[*] Login başlatılıyor: {email}")
-
-    # 1) Turnstile token al (İlk olarak Turnstile token alınıyor - 5 dk timeout)
-    turnstile_token = get_yolly_turnstile_token(timeout=300)
-    if not turnstile_token:
-        print(f"[-] Turnstile token alınamadı ({email})")
-        return None, None
-
-    # 2) Find proxy for send-code (Turnstile alındıktan sonra bulunuyor)
-    working_proxy = find_working_proxy(max_workers=30)
+    working_proxy = PROXY or find_working_proxy(max_workers=30)
     send_code_proxies = None
     if working_proxy:
         print(f"[*] Send-code proxy'si hazır: {working_proxy}")
@@ -744,17 +493,26 @@ def login_yolly(email, password=None):
     else:
         print("[-] Proxy bulunamadı, send-code proxysiz gidecek.")
 
+    # 1.1) Turnstile Token al (5 dakika timeout)
+    print(f"[*] Turnstile token alınıyor ({email})...")
+    turnstile_token = get_turnstile_token(timeout=300)
+    if not turnstile_token:
+        print(f"[-] Turnstile token alınamadı ({email})")
+        return None, None
+
     # 2) send-code — WITH PROXY
     try:
+        send_headers = dict(session.headers)
+        send_headers.update({
+            "accept": "*/*",
+            "content-type": "application/json",
+            "origin": "https://www.yolly.ai",
+            "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
+        })
         res = session.post(
             "https://www.yolly.ai/api/auth/send-code",
-            headers={
-                "accept": "*/*",
-                "content-type": "application/json",
-                "origin": "https://www.yolly.ai",
-                "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
-            },
             json={"email": email, "turnstileToken": turnstile_token},
+            headers=send_headers,
             proxies=send_code_proxies,
             timeout=15,
         )
@@ -803,7 +561,12 @@ def login_yolly(email, password=None):
         "csrfToken": csrf_token,
     }
     verify_headers = dict(session.headers)
-    verify_headers["content-type"] = "application/x-www-form-urlencoded"
+    verify_headers.update({
+        "accept": "*/*",
+        "content-type": "application/x-www-form-urlencoded",
+        "origin": "https://www.yolly.ai",
+        "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
+    })
 
     try:
         res = session.post(
@@ -1061,38 +824,36 @@ def create_and_login_new_account(max_attempts=30):
 
             print(f"[*] On-the-fly hesap oluşturuluyor: {email}")
 
+            # 1) send-code (with Turnstile token & proxy)
+            print(f"[*] Turnstile token alınıyor ({email})...")
+            turnstile_token = get_turnstile_token(timeout=300)
+            if not turnstile_token:
+                print("[-] Turnstile token alınamadı!")
+                continue
+            print(f"[+] Turnstile token hazır: {turnstile_token[:30]}...")
+
+            sc_proxy = PROXY or find_working_proxy(max_workers=30, for_verify=False)
+            if not sc_proxy:
+                print("[-] Çalışan proxy bulunamadı (send-code)!")
+                continue
+
             send_code_url = "https://www.yolly.ai/api/auth/send-code"
-            turnstile_token = None
-            sc_proxy = None
-            proxies_dict = None
+            proxies_dict = {"http": sc_proxy, "https": sc_proxy}
+            send_headers = dict(session.headers)
+            send_headers.update({
+                "accept": "*/*",
+                "content-type": "application/json",
+                "origin": "https://www.yolly.ai",
+                "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
+            })
 
             send_ok = False
             for attempt in range(3):
                 try:
-                    # 1) Önce Turnstile token al (5 dk bekleme süresi)
-                    if not turnstile_token:
-                        turnstile_token = get_yolly_turnstile_token(timeout=300)
-                        if not turnstile_token:
-                            print("[-] Turnstile token alınamadı (send-code)!")
-                            break
-
-                    # 2) Sonra proxy bul (istek öncesi taze olsun)
-                    if not sc_proxy:
-                        sc_proxy = find_working_proxy(max_workers=30, for_verify=False)
-                        if not sc_proxy:
-                            print("[-] Çalışan proxy bulunamadı (send-code)!")
-                            break
-                        proxies_dict = {"http": sc_proxy, "https": sc_proxy}
-
                     res = session.post(
                         send_code_url,
-                        headers={
-                            "accept": "*/*",
-                            "content-type": "application/json",
-                            "origin": "https://www.yolly.ai",
-                            "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
-                        },
                         json={"email": email, "turnstileToken": turnstile_token},
+                        headers=send_headers,
                         proxies=proxies_dict,
                         timeout=15
                     )
@@ -1100,22 +861,25 @@ def create_and_login_new_account(max_attempts=30):
                         try:
                             send_data = res.json()
                             if send_data.get("message") == "RATE_LIMIT_IP" or send_data.get("code") == -1:
-                                print("[-] Send-code rate limit yedi, yeni token ve proxy aranacak...")
-                                sc_proxy = None
-                                turnstile_token = None
+                                print("[-] Send-code rate limit yedi, yeni proxy aranıyor...")
+                                sc_proxy = PROXY or find_working_proxy(max_workers=30, for_verify=False)
+                                if sc_proxy:
+                                    proxies_dict = {"http": sc_proxy, "https": sc_proxy}
                                 continue
                         except Exception:
                             pass
                         send_ok = True
                         break
                     else:
-                        print(f"[-] Send-code başarısız ({res.status_code}), yeniden denenecek...")
-                        sc_proxy = None
-                        turnstile_token = None
+                        print(f"[-] Send-code başarısız ({res.status_code}), proxy değiştiriliyor...")
+                        sc_proxy = PROXY or find_working_proxy(max_workers=30, for_verify=False)
+                        if sc_proxy:
+                            proxies_dict = {"http": sc_proxy, "https": sc_proxy}
                 except Exception as e:
                     print(f"[-] Send-code bağlantı hatası: {e}")
-                    sc_proxy = None
-                    turnstile_token = None
+                    sc_proxy = PROXY or find_working_proxy(max_workers=30, for_verify=False)
+                    if sc_proxy:
+                        proxies_dict = {"http": sc_proxy, "https": sc_proxy}
 
             if not send_ok:
                 print("[-] Send-code başarısız oldu.")
@@ -1167,7 +931,12 @@ def create_and_login_new_account(max_attempts=30):
             }
 
             verify_headers = dict(session.headers)
-            verify_headers["content-type"] = "application/x-www-form-urlencoded"
+            verify_headers.update({
+                "accept": "*/*",
+                "content-type": "application/x-www-form-urlencoded",
+                "origin": "https://www.yolly.ai",
+                "referer": "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite",
+            })
 
             verify_success = False
             for attempt in range(3):

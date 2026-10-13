@@ -58,7 +58,16 @@ class TurnstileBrowserWorker:
                 self.worker_thread.start()
 
     def _init_browser(self):
-        print(f"[+] CloakBrowser (headless) baslatiliyor (Proxy: {self.proxy})...")
+        print(f"[+] CloakBrowser (headless) baslatiliyor (Proxy: {self.proxy})...", flush=True)
+        # Stale lock dosyalarini temizle (Linux/Docker icin)
+        for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
+            lock_path = os.path.join(self.profile_dir, lock_file)
+            if os.path.exists(lock_path) or os.path.islink(lock_path):
+                try:
+                    os.unlink(lock_path)
+                except Exception:
+                    pass
+
         self.context = launch_persistent_context(
             user_data_dir=self.profile_dir,
             headless=True,
@@ -66,6 +75,10 @@ class TurnstileBrowserWorker:
             humanize=True,
             stealth_args=True,
             args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
                 "--disable-infobars",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -73,14 +86,14 @@ class TurnstileBrowserWorker:
             ],
         )
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
-        print("[+] CloakBrowser hazir ve beklemede.")
+        print("[+] CloakBrowser hazir ve beklemede.", flush=True)
 
     def _worker_loop(self):
         try:
             self._init_browser()
             self.ready_event.set()
         except Exception as e:
-            print(f"[!] Browser baslatilamadi: {e}")
+            print(f"[!] Browser baslatilamadi: {e}", flush=True)
             self.ready_event.set()
 
         while self.running:
@@ -95,9 +108,9 @@ class TurnstileBrowserWorker:
                 if not self.context or not self.page:
                     self._init_browser()
 
-                print(f"[+] Hedef adrese gidiliyor: {target_url}")
+                print(f"[+] Hedef adrese gidiliyor: {target_url}", flush=True)
                 self.page.goto(target_url, wait_until="domcontentloaded")
-                print("[+] Sayfa yuklendi. Turnstile kontrol ediliyor...")
+                print("[+] Sayfa yuklendi. Turnstile kontrol ediliyor...", flush=True)
 
                 start_time = time.time()
                 while time.time() - start_time < timeout:
@@ -129,15 +142,20 @@ class TurnstileBrowserWorker:
                         if "challenges.cloudflare.com" in frame.url:
                             try:
                                 frame.locator("body").click(timeout=1500)
-                                print("[+] Cloudflare kutucuguna tiklandi.")
+                                print("[+] Cloudflare kutucuguna tiklandi.", flush=True)
                                 break
                             except Exception:
                                 pass
 
                     time.sleep(1)
 
+                if token:
+                    print(f"[+] Turnstile token basariyla alindi: {token[:30]}...", flush=True)
+                else:
+                    print("[-] Belirlenen sure icinde Turnstile token alinamadi.", flush=True)
+
             except Exception as e:
-                print(f"\n[!] Bir hata olustu: {e}\n")
+                print(f"\n[!] Bir hata olustu: {e}\n", flush=True)
                 try:
                     if self.context:
                         self.context.close()

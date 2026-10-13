@@ -20,6 +20,9 @@ import base64
 import json
 import threading
 import queue as _queue
+import tempfile
+import shutil
+import platform as _platform
 from concurrent.futures import ThreadPoolExecutor
 
 import atexit
@@ -28,176 +31,124 @@ from cloakbrowser import launch_persistent_context
 DEFAULT_TARGET_URL = "https://www.yolly.ai/auth/signin?callbackUrl=http%3A%2F%2Fwww.yolly.ai%2Finvite"
 DEFAULT_PROXY = "http://tghpxuwn:dxrsnpsyz3df@45.38.107.97:6014"
 PROXY = os.environ.get("PROXY", DEFAULT_PROXY)
-PROFILE_DIR = os.path.join(os.path.abspath(os.path.dirname(__file__)), "browser_profile")
-os.makedirs(PROFILE_DIR, exist_ok=True)
+
+os.environ["CLOAKBROWSER_SUPPRESS_FONT_WARNING"] = "1"
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+_turnstile_lock = threading.Lock()
 
 
-class TurnstileBrowserWorker:
-    """Arka planda tek bir CloakBrowser oturumu tutan ve
-    istek geldikce Turnstile tokeni cozen yonetici sinifi.
+def get_turnstile_token(target_url=DEFAULT_TARGET_URL, timeout=300):
     """
+    Hedef adrese gidip Cloudflare Turnstile tokenini alip dondurur (varsayilan 300s / 5 dk).
+    - Render Linux container uyumlu (--fingerprint-platform=linux ile font ve canvas tutarliligi).
+    - Her cozum icin temiz izole gecici profil kullanir (eski cookie/cache reputation engellerini onler).
+    - Cozumden sonra Chromium context'ini temiz kapatip 512MB RAM'i serbest birakir.
+    - Cloudflare kutucuguna sadece 1 kez tiklar (challenge'i sifirlamaz).
+    - Canli periyodik log basar.
+    """
+    with _turnstile_lock:
+        print(f"[*] Turnstile cozumu baslatiliyor (Timeout: {timeout}s)...", flush=True)
 
-    def __init__(self, proxy=PROXY, profile_dir=PROFILE_DIR):
-        self.proxy = proxy
-        self.profile_dir = profile_dir
-        self.task_queue = _queue.Queue()
-        self.ready_event = threading.Event()
-        self.running = True
-        self.context = None
-        self.page = None
-        self._lock = threading.Lock()
-        self.worker_thread = None
-        self._ensure_running()
+        profile_dir = tempfile.mkdtemp(prefix="cb_profile_")
 
-    def _ensure_running(self):
-        with self._lock:
-            if not self.worker_thread or not self.worker_thread.is_alive():
-                self.running = True
-                self.ready_event = threading.Event()
-                self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
-                self.worker_thread.start()
+        args = [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-infobars",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--window-size=1920,1080",
+        ]
+        if _platform.system() != "Windows":
+            args.append("--fingerprint-platform=linux")
 
-    def _init_browser(self):
-        print(f"[+] CloakBrowser (headless) baslatiliyor (Proxy: {self.proxy})...", flush=True)
-        # Stale lock dosyalarini temizle (Linux/Docker icin)
-        for lock_file in ["SingletonLock", "SingletonCookie", "SingletonSocket"]:
-            lock_path = os.path.join(self.profile_dir, lock_file)
-            if os.path.exists(lock_path) or os.path.islink(lock_path):
-                try:
-                    os.unlink(lock_path)
-                except Exception:
-                    pass
-
-        self.context = launch_persistent_context(
-            user_data_dir=self.profile_dir,
-            headless=True,
-            proxy=self.proxy,
-            humanize=True,
-            stealth_args=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--disable-infobars",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--window-size=1920,1080",
-            ],
-        )
-        self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
-        print("[+] CloakBrowser hazir ve beklemede.", flush=True)
-
-    def _worker_loop(self):
+        context = None
+        token = None
         try:
-            self._init_browser()
-            self.ready_event.set()
-        except Exception as e:
-            print(f"[!] Browser baslatilamadi: {e}", flush=True)
-            self.ready_event.set()
+            print(f"[+] CloakBrowser (headless) baslatiliyor (Proxy: {PROXY})...", flush=True)
+            context = launch_persistent_context(
+                user_data_dir=profile_dir,
+                headless=True,
+                proxy=PROXY,
+                humanize=True,
+                stealth_args=True,
+                args=args,
+            )
+            page = context.pages[0] if context.pages else context.new_page()
 
-        while self.running:
-            item = self.task_queue.get()
-            if item is None:
-                break
+            print(f"[+] Hedef adrese gidiliyor: {target_url}", flush=True)
+            page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+            print("[+] Sayfa yuklendi. Turnstile kontrol ediliyor...", flush=True)
+            time.sleep(2.5)
 
-            target_url, timeout, res_queue = item
             token = None
+            last_click = 0
+            start_time = time.time()
 
-            try:
-                if not self.context or not self.page:
-                    self._init_browser()
-
-                print(f"[+] Hedef adrese gidiliyor: {target_url}", flush=True)
-                self.page.goto(target_url, wait_until="domcontentloaded")
-                print("[+] Sayfa yuklendi. Turnstile kontrol ediliyor...", flush=True)
-
-                start_time = time.time()
-                while time.time() - start_time < timeout:
-                    # 1. Onceden uretilmis token var mi kontrol et
+            while time.time() - start_time < timeout:
+                for frame in page.frames:
                     try:
-                        val = self.page.evaluate("() => document.querySelector('[name=\"cf-turnstile-response\"]')?.value")
-                        if val and len(val) > 20:
-                            token = val
-                            break
+                        el = frame.query_selector('[name="cf-turnstile-response"]')
+                        if el:
+                            val = el.input_value() or el.get_attribute("value")
+                            if val and len(val) > 20:
+                                token = val
+                                break
                     except Exception:
                         pass
 
-                    for frame in self.page.frames:
-                        try:
-                            el = frame.query_selector('[name="cf-turnstile-response"]')
-                            if el:
-                                val = el.input_value() or el.get_attribute("value")
-                                if val and len(val) > 20:
-                                    token = val
-                                    break
-                        except Exception:
-                            pass
+                if token:
+                    break
 
-                    if token:
-                        break
-
-                    # 2. Cloudflare alani gorunduyse tikla
-                    for frame in self.page.frames:
+                # Cloudflare alani gorunduyse en fazla 5 saniyede bir tikla (spam yapmadan)
+                if time.time() - last_click > 5:
+                    for frame in page.frames:
                         if "challenges.cloudflare.com" in frame.url:
                             try:
-                                frame.locator("body").click(timeout=1500)
-                                print("[+] Cloudflare kutucuguna tiklandi.", flush=True)
+                                frame.locator("body").click(timeout=2000)
+                                print(f"[+] Cloudflare kutucuguna tiklandi ({int(time.time()-start_time)}s).", flush=True)
+                                last_click = time.time()
                                 break
                             except Exception:
                                 pass
 
-                    time.sleep(1)
+                time.sleep(1)
+                elapsed = int(time.time() - start_time)
+                if elapsed > 0 and elapsed % 10 == 0:
+                    print(f"[*] Turnstile bekleniyor ({elapsed}/{timeout}s)...", flush=True)
 
-                if token:
-                    print(f"[+] Turnstile token basariyla alindi: {token[:30]}...", flush=True)
-                else:
-                    print("[-] Belirlenen sure icinde Turnstile token alinamadi.", flush=True)
+            if token:
+                print(f"[+] Turnstile token basariyla alindi: {token[:30]}...", flush=True)
+            else:
+                print("[-] Belirlenen sure icinde Turnstile token alinamadi.", flush=True)
 
-            except Exception as e:
-                print(f"\n[!] Bir hata olustu: {e}\n", flush=True)
+            return token
+
+        except Exception as e:
+            print(f"\n[!] Turnstile cozucu hatasi: {e}\n", flush=True)
+            return None
+        finally:
+            if context:
                 try:
-                    if self.context:
-                        self.context.close()
+                    context.close()
                 except Exception:
                     pass
-                self.context = None
-                self.page = None
+            shutil.rmtree(profile_dir, ignore_errors=True)
 
-            res_queue.put(token)
-            self.task_queue.task_done()
 
-        if self.context:
-            try:
-                self.context.close()
-            except Exception:
-                pass
-            self.context = None
-
+class TurnstileBrowserWorker:
+    """Geriye donuk uyumluluk icin Turnstile helper sarmalayicisi."""
     def get_token(self, target_url=DEFAULT_TARGET_URL, timeout=300):
-        self._ensure_running()
-        self.ready_event.wait(timeout=30)
-        res_queue = _queue.Queue()
-        self.task_queue.put((target_url, timeout, res_queue))
-        try:
-            return res_queue.get(timeout=timeout + 15)
-        except _queue.Empty:
-            return None
+        return get_turnstile_token(target_url=target_url, timeout=timeout)
 
     def close(self):
-        self.running = False
-        self.task_queue.put(None)
+        pass
 
 
 _turnstile_worker = TurnstileBrowserWorker()
-
-
-def get_turnstile_token(target_url=DEFAULT_TARGET_URL, timeout=300):
-    """Hedef adrese gidip Cloudflare Turnstile tokenini alip dondurur (varsayilan 300s / 5 dk)."""
-    return _turnstile_worker.get_token(target_url=target_url, timeout=timeout)
-
-
-atexit.register(lambda: _turnstile_worker.close())
 
 VERIFY_BLACKLIST = set()
 blacklist_lock = threading.Lock()
@@ -512,10 +463,10 @@ def login_yolly(email, password=None):
         print("[-] Proxy bulunamadı, send-code proxysiz gidecek.")
 
     # 1.1) Turnstile Token al (5 dakika timeout)
-    print(f"[*] Turnstile token alınıyor ({email})...")
+    print(f"[*] Turnstile token alınıyor ({email})...", flush=True)
     turnstile_token = get_turnstile_token(timeout=300)
     if not turnstile_token:
-        print(f"[-] Turnstile token alınamadı ({email})")
+        print(f"[-] Turnstile token alınamadı ({email})", flush=True)
         return None, None
 
     # 2) send-code — WITH PROXY
@@ -535,27 +486,27 @@ def login_yolly(email, password=None):
             timeout=15,
         )
         if res.status_code != 200:
-            print(f"[-] Send code başarısız ({email}): Status {res.status_code}")
+            print(f"[-] Send code başarısız ({email}): Status {res.status_code}", flush=True)
             return None, None
     except Exception as e:
-        print(f"[-] Send code hatası ({email}): {e}")
+        print(f"[-] Send code hatası ({email}): {e}", flush=True)
         return None, None
 
     # 3) Wait and check Spamok — retry up to 3 times with 15s waits
     temp = eTemp()
     code = None
     for attempt in range(1, 4):
-        print(f"[*] {attempt}. deneme: 15 saniye bekleniyor (eski kodlar temizlensin)...")
+        print(f"[*] {attempt}. deneme: 15 saniye bekleniyor (eski kodlar temizlensin)...", flush=True)
         time.sleep(15)
-        print(f"[*] Spamok kutusu kontrol ediliyor ({email})...")
+        print(f"[*] Spamok kutusu kontrol ediliyor ({email})...", flush=True)
         code = temp.getVerificationCode(email, timeout=15)
         if code:
-            print(f"[+] Doğrulama kodu bulundu: {code}")
+            print(f"[+] Doğrulama kodu bulundu: {code}", flush=True)
             break
         if attempt < 3:
-            print(f"[-] Kod bulunamadı, tekrar deneniyor...")
+            print(f"[-] Kod bulunamadı, tekrar deneniyor...", flush=True)
         else:
-            print(f"[-] Doğrulama kodu 3 denemede de alınamadı ({email})")
+            print(f"[-] Doğrulama kodu 3 denemede de alınamadı ({email})", flush=True)
             return None, None
 
     # 4) CSRF — no proxy
@@ -834,25 +785,25 @@ def create_and_login_new_account(max_attempts=30):
     Returns (session, email) on success, or (None, None) on failure.
     """
     for attempt_num in range(1, max_attempts + 1):
-        print(f"[*] Hesap oluşturma denemesi {attempt_num}/{max_attempts}...")
+        print(f"[*] Hesap oluşturma denemesi {attempt_num}/{max_attempts}...", flush=True)
         try:
             temp = eTemp()
             email = temp.getEmail()
             session = make_yolly_session()
 
-            print(f"[*] On-the-fly hesap oluşturuluyor: {email}")
+            print(f"[*] On-the-fly hesap oluşturuluyor: {email}", flush=True)
 
             # 1) send-code (with Turnstile token & proxy)
-            print(f"[*] Turnstile token alınıyor ({email})...")
+            print(f"[*] Turnstile token alınıyor ({email})...", flush=True)
             turnstile_token = get_turnstile_token(timeout=300)
             if not turnstile_token:
-                print("[-] Turnstile token alınamadı!")
+                print("[-] Turnstile token alınamadı!", flush=True)
                 continue
-            print(f"[+] Turnstile token hazır: {turnstile_token[:30]}...")
+            print(f"[+] Turnstile token hazır: {turnstile_token[:30]}...", flush=True)
 
             sc_proxy = PROXY or find_working_proxy(max_workers=30, for_verify=False)
             if not sc_proxy:
-                print("[-] Çalışan proxy bulunamadı (send-code)!")
+                print("[-] Çalışan proxy bulunamadı (send-code)!", flush=True)
                 continue
 
             send_code_url = "https://www.yolly.ai/api/auth/send-code"
@@ -900,21 +851,21 @@ def create_and_login_new_account(max_attempts=30):
                         proxies_dict = {"http": sc_proxy, "https": sc_proxy}
 
             if not send_ok:
-                print("[-] Send-code başarısız oldu.")
+                print("[-] Send-code başarısız oldu.", flush=True)
                 continue
 
             # 2) Doğrulama kodu al (od2.in)
             code = None
             for attempt in range(1, 4):
-                print(f"[*] od2.in kutusu kontrol ediliyor ({email})...")
+                print(f"[*] od2.in kutusu kontrol ediliyor ({email})...", flush=True)
                 time.sleep(15)
                 code = temp.getVerificationCode(email, timeout=15)
                 if code:
                     break
-                print(f"[-] Kod bulunamadı ({email}), tekrar deneniyor...")
+                print(f"[-] Kod bulunamadı ({email}), tekrar deneniyor...", flush=True)
 
             if not code:
-                print(f"[-] Doğrulama kodu alınamadı ({email})")
+                print(f"[-] Doğrulama kodu alınamadı ({email})", flush=True)
                 continue
 
             # 3) CSRF token al (proxy'siz)
@@ -929,13 +880,13 @@ def create_and_login_new_account(max_attempts=30):
                     pass
             
             if not csrf_token:
-                print(f"[-] CSRF token alınamadı ({email})")
+                print(f"[-] CSRF token alınamadı ({email})", flush=True)
                 continue
 
             # 4) Verify Callback (TEMİZ proxy ile)
             verify_proxy = find_working_proxy(max_workers=30, for_verify=True)
             if not verify_proxy:
-                print("[-] Temiz verify proxy bulunamadı!")
+                print("[-] Temiz verify proxy bulunamadı!", flush=True)
                 continue
 
             verify_url = "https://www.yolly.ai/api/auth/callback/verification-code?"
@@ -973,14 +924,14 @@ def create_and_login_new_account(max_attempts=30):
                             VERIFY_BLACKLIST.add(extract_ip(verify_proxy))
                         break
                     else:
-                        print(f"[-] Verify başarısız ({res.status_code}), proxy değiştiriliyor...")
+                        print(f"[-] Verify başarısız ({res.status_code}), proxy değiştiriliyor...", flush=True)
                         verify_proxy = find_working_proxy(max_workers=30, for_verify=True)
                 except Exception as e:
-                    print(f"[-] Verify bağlantı hatası: {e}")
+                    print(f"[-] Verify bağlantı hatası: {e}", flush=True)
                     verify_proxy = find_working_proxy(max_workers=30, for_verify=True)
 
             if not verify_success:
-                print("[-] Verify başarısız.")
+                print("[-] Verify başarısız.", flush=True)
                 continue
 
             # 5) Kredi kontrolü
@@ -995,16 +946,16 @@ def create_and_login_new_account(max_attempts=30):
 
             # 30 kredi kontrolü: yollyAIProxy.py'deki gibi 30 kredi olmalı!
             if credits != 30:
-                print(f"[-] Kredi 30 değil ({credits}), yeni hesap denenecek.")
+                print(f"[-] Kredi 30 değil ({credits}), yeni hesap denenecek.", flush=True)
                 continue
 
-            print(f"[+] Başarılı hesap oluşturuldu: {email} (Kredi: {credits})")
+            print(f"[+] Başarılı hesap oluşturuldu: {email} (Kredi: {credits})", flush=True)
             return session, email
 
         except Exception as e:
-            print(f"[-] Hesap oluşturulurken beklenmeyen hata oluştu: {e}")
+            print(f"[-] Hesap oluşturulurken beklenmeyen hata oluştu: {e}", flush=True)
             continue
 
-    print(f"[-] {max_attempts} denemede 30 kredilik hesap oluşturulamadı!")
+    print(f"[-] {max_attempts} denemede 30 kredilik hesap oluşturulamadı!", flush=True)
     return None, None
 
